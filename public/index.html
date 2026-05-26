@@ -297,19 +297,20 @@ async function run(){
   const stockPrompt=`你是台灣股市分析師。根據條件推薦${topN}檔台股標的（股價低於${price}元）。
 條件：${ctx}，日期:${date}
 
-重要：你的回應必須是純JSON格式，不得包含任何markdown符號（*、**、#等），不得有換行縮排以外的特殊字元。
-直接輸出以下格式的JSON陣列：
-[{"code":"2603","name":"長榮","sector":"航運","current_price":158.5,"est_price":155,"momentum":"強勢突破","score":88,"reasons":["航運旺季","外資買超","突破前高"],"strategy":"進場150-158元，目標180元，停損140元","risk":"運費回落風險"}]
+重要規則：
+1. 只輸出純JSON陣列，第一個字元是[，最後一個字元是]
+2. 不得包含任何markdown符號
+3. 每個字串欄位必須簡短：reasons每項最多8個字，strategy最多20個字，risk最多15個字
 
-欄位說明：current_price為該股近期實際成交價（根據你的訓練資料），est_price為你對合理價值的估算。
-只輸出JSON陣列本身，第一個字元必須是[，最後一個字元必須是]。`;
+格式（嚴格遵守，不得超出）：
+[{"code":"2603","name":"長榮","sector":"航運","current_price":158,"est_price":155,"momentum":"強勢突破","score":88,"reasons":["航運旺季","外資買超","突破前高"],"strategy":"進場150-158目標180停損140","risk":"運費回落"}]`;
 
   const metaPrompt=`台灣股市分析師，今日：${ctx}，日期:${date}。
 重要：只輸出純JSON，不含任何markdown符號。
 格式：{"summary":"今日市場評估2句","key_note":"明日操盤重點1句","watchlist":["2603 長榮","2881 富邦金"]}`;
 
   try{
-    const [rawStocks,rawMeta]=await Promise.all([callAI(stockPrompt,2000),callAI(metaPrompt,500)]);
+    const [rawStocks,rawMeta]=await Promise.all([callAI(stockPrompt,3000),callAI(metaPrompt,500)]);
     stopLd();
 
     let stocks=[],meta={summary:'',key_note:'',watchlist:[]};
