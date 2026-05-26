@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: maxTokens,
+          maxOutputTokens: maxTokens || 4000,
           temperature: 0.7,
           responseMimeType: 'application/json',
         },
@@ -39,5 +39,7 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }
+}
+
 }
 
