@@ -9,10 +9,8 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 未設定，請至 Vercel 後台填寫環境變數。' });
 
-  // 接收前端 Streamlit 的選股設定欄位
   const { market_status, foreign_investment, style, risk, notes, maxTokens } = req.body || {};
 
-  // 自動組合成完整的 AI 提示詞，並嚴格約束欄位名稱符合前端預期
   const prompt = `
 請根據以下台股市場背景與投資偏好，挑選並推薦 3~5 檔符合條件的台股個股，並給出具體的投資策略：
 1. 大盤走勢：${market_status || '未指定'}
@@ -21,8 +19,8 @@ export default async function handler(req, res) {
 4. 風險承受度：${risk || '穩健'}
 5. 特殊事件/盤前資訊：${notes || '無'}
 
-請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記（如 \`\`\`json）、註解或客套話。
-必須確保每個欄位名稱（如 name, id, price）完全與範例一致，以便網頁正確解析：
+請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記（如 \`\`\`json）、註解或客套話（例如絕對不要寫 Here is the...）。
+必須確保每個欄位名稱（如 name, id, price）完全與範例一致：
 
 [
   {
@@ -40,7 +38,6 @@ export default async function handler(req, res) {
 ]
 `;
 
-  // 2026 官方最嚴謹標準代號
   const models = [
     'gemini-2.5-flash',
     'gemini-3.1-flash-lite',
@@ -86,26 +83,30 @@ export default async function handler(req, res) {
 
       if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
-      // 清洗 Markdown 標籤
-      text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-
+      // 🛑 核心強力清洗升級：不管 AI 前後加了什麼廢話，暴力只擷取最外層的 [ ... ] 內容
       const arrStart = text.indexOf('[');
       const arrEnd = text.lastIndexOf(']');
-      const objStart = text.indexOf('{');
-      const objEnd = text.lastIndexOf('}');
-
+      
       if (arrStart !== -1 && arrEnd > arrStart) {
         text = text.slice(arrStart, arrEnd + 1);
-      } else if (objStart !== -1 && objEnd > objStart) {
-        text = text.slice(objStart, objEnd + 1);
+      } else {
+        // 如果找不到中括號，再試著找大括號 { ... }
+        const objStart = text.indexOf('{');
+        const objEnd = text.lastIndexOf('}');
+        if (objStart !== -1 && objEnd > objStart) {
+          text = "[" + text.slice(objStart, objEnd + 1) + "]"; // 強制包成陣列格式符合前端
+        }
       }
 
-      // ⭐ 核心優化：直接回傳解析後的 JSON 物件/陣列，不再套上 { text, model } 的外殼
+      // 清洗掉可能殘留的換行或空格
+      text = text.trim();
+
       try {
         const parsedData = JSON.parse(text); 
-        return res.status(200).json(parsedData); // ✅ 這樣前端拿到的就是純粹的股票資料陣列了！
+        return res.status(200).json(parsedData); 
       } catch (e) {
-        lastError = `模型 ${model} 的 JSON 結構異常: ${e.message}`;
+        // 記錄下清洗後的錯誤文字，方便 debug
+        lastError = `模型 ${model} 清洗後 JSON 解析依舊失敗。文字片段: ${text.slice(0, 40)}... 錯誤原因: ${e.message}`;
         continue;
       }
 
