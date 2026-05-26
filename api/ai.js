@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   // 接收前端 Streamlit 的選股設定欄位
   const { market_status, foreign_investment, style, risk, notes, maxTokens } = req.body || {};
 
-  // 自動組合成完整的 AI 提示詞
+  // 自動組合成完整的 AI 提示詞，並嚴格約束欄位名稱符合前端預期
   const prompt = `
 請根據以下台股市場背景與投資偏好，挑選並推薦 3~5 檔符合條件的台股個股，並給出具體的投資策略：
 1. 大盤走勢：${market_status || '未指定'}
@@ -21,18 +21,32 @@ export default async function handler(req, res) {
 4. 風險承受度：${risk || '穩健'}
 5. 特殊事件/盤前資訊：${notes || '無'}
 
-請嚴格以 JSON 格式回傳，不可包含任何 Markdown 標記、註解或客套話。
+請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記（如 \`\`\`json）、註解或客套話。
+必須確保每個欄位名稱（如 name, id, price）完全與範例一致，以便網頁正確解析：
+
+[
+  {
+    "id": "2330",
+    "name": "台積電",
+    "market": "半導體",
+    "price": 900,
+    "valuation": 950,
+    "momentum": "強勢突破",
+    "score": 90,
+    "reason": "符合動能突破與外資大量買超條件，基本面強勁。",
+    "strategy": "於突破前波高點時進場，設定跌破5日均線為停損點，目標價設為估價。",
+    "risk": "高基期修正壓力及地緣政治風險。"
+  }
+]
 `;
 
-  // ⭐ 2026 官方標準 API 規格清單（保證全部存在且支援 generateContent）
+  // 2026 官方最嚴謹標準代號
   const models = [
-    'gemini-2.5-flash',       // 2.5 世代核心輕量模型
-    'gemini-1.5-flash',       // 1.5 經典輕量模型（免費額度最穩、最大）
-    'gemini-1.5-pro',         // 1.5 進階高邏輯模型（備用保底）
-    'gemini-3.1-flash-lite',  // 全新 500 次大額度，最安全的保底防線
-    'gemini-3-flash',         // 全新 20 次額度備用
-    'gemini-2.5-flash-lite',  // 全新 20 次額度備用
-    'gemini-3.5-flash'        // 已用光，放最後順位等下午4點重置
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-3.5-flash'
   ];
 
   let lastError = '';
@@ -55,7 +69,6 @@ export default async function handler(req, res) {
 
       const data = await response.json();
 
-      // 如果遇到錯誤，一律記錄並強行跳到下一個模型，絕對不中斷
       if (!response.ok) {
         const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
         lastError = `模型 ${model} 失敗: ${msg}`;
@@ -73,6 +86,7 @@ export default async function handler(req, res) {
 
       if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
+      // 清洗 Markdown 標籤
       text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
       const arrStart = text.indexOf('[');
@@ -86,15 +100,14 @@ export default async function handler(req, res) {
         text = text.slice(objStart, objEnd + 1);
       }
 
+      // ⭐ 核心優化：直接回傳解析後的 JSON 物件/陣列，不再套上 { text, model } 的外殼
       try {
-        JSON.parse(text); 
+        const parsedData = JSON.parse(text); 
+        return res.status(200).json(parsedData); // ✅ 這樣前端拿到的就是純粹的股票資料陣列了！
       } catch (e) {
         lastError = `模型 ${model} 的 JSON 結構異常: ${e.message}`;
         continue;
       }
-
-      // 只要成功一個，就直接回傳前端並中斷迴圈
-      return res.status(200).json({ text, model });
 
     } catch (err) {
       lastError = `程式異常 (${model}): ${err.message}`;
