@@ -24,9 +24,13 @@ export default async function handler(req, res) {
 請嚴格以 JSON 格式回傳，不可包含任何 Markdown 標記、註解或客套話。
 `;
 
+  // ⭐ 超強大備用軍團：依據你主機後台有的模型，全部拉進來輪詢
   const models = [
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
+    'gemini-3.5-flash',     // 第一順位：最新最聰明（你已用 18 次）
+    'gemini-2.5-flash',     // 第二順位：穩定的 2.5 世代（獨立 20 次額度）
+    'gemini-1.5-flash',     // 第三順位：老牌經典款（獨立 1500 次大額度備用）
+    'gemini-2.0-flash-exp', // 第四順位：2.0 的標準實驗版（單獨計費區）
+    'gemini-3.1-flash'      // 第五順位：3.1 世代輕量版（防禦備用）
   ];
 
   let lastError = '';
@@ -49,13 +53,11 @@ export default async function handler(req, res) {
 
       const data = await response.json();
 
+      // ⭐ 核心修正：不管是限流、超額、還是任何錯誤，一律無條件 continue 跳下一個模型！
       if (!response.ok) {
         const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
-        if (msg.includes('quota') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED') || response.status === 429) {
-          lastError = msg;
-          continue;
-        }
-        return res.status(response.status).json({ error: msg });
+        lastError = `模型 ${model} 失敗: ${msg}`;
+        continue; 
       }
 
       let text = (
@@ -67,7 +69,7 @@ export default async function handler(req, res) {
         data.candidates[0].content.parts[0].text
       ) || '';
 
-      if (!text) { lastError = 'AI 回傳內容空白'; continue; }
+      if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
       text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
@@ -85,19 +87,21 @@ export default async function handler(req, res) {
       try {
         JSON.parse(text); 
       } catch (e) {
-        lastError = `JSON 結構異常: ${e.message}`;
+        lastError = `模型 ${model} 的 JSON 結構異常: ${e.message}`;
         continue;
       }
 
+      // 只要成功一個，就直接回傳前端並中斷迴圈
       return res.status(200).json({ text, model });
 
     } catch (err) {
-      lastError = err.message;
+      lastError = `程式異常 (${model}): ${err.message}`;
       continue;
     }
   }
 
+  // 如果 5 個模型全部輪完了都死掉，才噴 500
   return res.status(500).json({
-    error: `選股系統處理失敗。原因可能是 API 限流、資料過大或 Vercel 平台超時。\n詳細錯誤：${lastError}`
+    error: `所有備用模型皆已嘗試，但皆因額度用光或超時而失敗。\n最後攔截到的錯誤：${lastError}`
   });
 }
