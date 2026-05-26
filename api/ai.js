@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { prompt, maxTokens = 2500 } = req.body;
-  const apiKey = AIzaSyBrzCcPXQ1NBwBQs7tk78tgc5V58M9mKaQ;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   try {
     const response = await fetch(
