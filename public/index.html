@@ -311,37 +311,16 @@ async function runAI(){
   switchTab('result');
   startProgress();
 
-  const prompt=`你是一位台灣股市量化選股分析師，請根據以下條件，從台灣上市公司中主動挑選今日推薦標的，給出完整選股報告。
+  const topNNum = parseInt(topN);
+  const prompt=`你是台灣股市分析師。請從台股上市公司挑出${topNNum}檔推薦標的，股價須低於${priceLimit}元。
 
-【分析日期】${date}
-【篩選條件】股價上限：${priceLimit}元 / 動能觀察：${days}個交易日 / 建議股數：${topN}檔
-【市場環境】大盤：${market} / 外資：${foreign} / 類股焦點：${sector||'無'}
-【投資偏好】${style} / 風險：${risk}
-【特殊事件】${note||'無'}
+條件：${market}，${foreign}，類股焦點：${sector||'無'}，風格：${style}，風險：${risk}，事件：${note||'無'}
 
-請從台股上市公司中挑出 ${topN} 檔最符合條件的標的（股價須低於 ${priceLimit} 元）。
-只回傳純 JSON，不要任何其他文字或 markdown：
-{
-  "summary": "整體市場環境簡評（2-3句）",
-  "stocks": [
-    {
-      "code": "股票代碼",
-      "name": "公司名稱",
-      "sector": "所屬板塊",
-      "est_price": 估計現價數字,
-      "momentum": "強勢突破|溫和上攻|盤整|短線回調",
-      "score": 0到100整數,
-      "reasons": ["理由1","理由2","理由3"],
-      "strategy": "操作策略：進場區間、目標價、停損位（1-2句）",
-      "risk": "主要風險（1句）"
-    }
-  ],
-  "watchlist": ["代碼 名稱"],
-  "key_note": "明日操盤重點（1-2句）"
-}`;
+只回傳JSON，格式如下，stocks陣列必須有${topNNum}個元素：
+{"summary":"市場簡評","stocks":[{"code":"代碼","name":"名稱","sector":"板塊","est_price":數字,"momentum":"強勢突破","score":85,"reasons":["理由1","理由2"],"strategy":"策略","risk":"風險"}],"watchlist":["代碼 名稱"],"key_note":"明日重點"}`;
 
   try{
-    const raw=await callAI(prompt,2500);
+    const raw=await callAI(prompt,4000);
     stopProgress();
     let parsed;
     try{
