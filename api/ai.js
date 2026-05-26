@@ -11,15 +11,16 @@ export default async function handler(req, res) {
 
   const { market_status, foreign_investment, style, risk, notes, maxTokens } = req.body || {};
 
+  // 調整提示詞：精準固定為 3 檔，減少字數避免爆 Token
   const prompt = `
-請根據以下台股市場背景與投資偏好，挑選並推薦 3~5 檔符合條件的台股個股，並給出具體的投資策略：
+請根據以下台股市場背景與投資偏好，挑選並推薦「精準 3 檔」符合條件的台股個股，並給出具體的投資策略：
 1. 大盤走勢：${market_status || '未指定'}
 2. 外資動向：${foreign_investment || '未指定'}
 3. 選股風格：${style || '動能突破型（短線）'}
 4. 風險承受度：${risk || '穩健'}
 5. 特殊事件/盤前資訊：${notes || '無'}
 
-請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記（如 \`\`\`json）、註解或客套話（例如絕對不要寫 Here is the...）。
+請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記、註解或客套話。
 必須確保每個欄位名稱（如 name, id, price）完全與範例一致：
 
 [
@@ -57,7 +58,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: maxTokens || 2000,
+            maxOutputTokens: maxTokens || 2500, // 稍微拉高最大 Token 限制
             temperature: 0.1,
             responseMimeType: "application/json"
           },
@@ -83,30 +84,35 @@ export default async function handler(req, res) {
 
       if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
-      // 🛑 核心強力清洗升級：不管 AI 前後加了什麼廢話，暴力只擷取最外層的 [ ... ] 內容
+      // 基礎清洗
+      text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
       const arrStart = text.indexOf('[');
       const arrEnd = text.lastIndexOf(']');
       
-      if (arrStart !== -1 && arrEnd > arrStart) {
-        text = text.slice(arrStart, arrEnd + 1);
-      } else {
-        // 如果找不到中括號，再試著找大括號 { ... }
-        const objStart = text.indexOf('{');
-        const objEnd = text.lastIndexOf('}');
-        if (objStart !== -1 && objEnd > objStart) {
-          text = "[" + text.slice(objStart, objEnd + 1) + "]"; // 強制包成陣列格式符合前端
+      if (arrStart !== -1) {
+        if (arrEnd > arrStart) {
+          text = text.slice(arrStart, arrEnd + 1);
+        } else {
+          // 💡 核心防禦：如果找到了開頭 [ 但沒有結尾 ]，說明字數被切斷了，自動在結尾補上大括號與中括號
+          text = text.slice(arrStart);
+          if (!text.endsWith(']')) {
+            // 嘗試自動封閉未完成的 JSON 結構
+            if (text.endsWith('}')) text += ']';
+            else if (text.endsWith('"') || text.endsWith('0') || text.endsWith('1') || text.endsWith('2') || text.endsWith('3') || text.endsWith('4') || text.endsWith('5') || text.endsWith('6') || text.endsWith('7') || text.endsWith('8') || text.endsWith('9')) text += '}]';
+            else text += '"}]';
+          }
         }
       }
 
-      // 清洗掉可能殘留的換行或空格
       text = text.trim();
 
       try {
         const parsedData = JSON.parse(text); 
         return res.status(200).json(parsedData); 
       } catch (e) {
-        // 記錄下清洗後的錯誤文字，方便 debug
-        lastError = `模型 ${model} 清洗後 JSON 解析依舊失敗。文字片段: ${text.slice(0, 40)}... 錯誤原因: ${e.message}`;
+        // ⭐ 如果自動補齊後依舊無法解析，交給下一個模型重新挑戰
+        lastError = `模型 ${model} 的 JSON 依然殘缺。錯誤: ${e.message}。原始文字末段: ${text.slice(-30)}`;
         continue;
       }
 
@@ -117,6 +123,6 @@ export default async function handler(req, res) {
   }
 
   return res.status(500).json({
-    error: `所有備用模型皆已嘗試，但皆因額度用光或超時而失敗。\n最後攔截到的錯誤：${lastError}`
+    error: `所有備用模型皆已嘗試，但皆因額度用光或結構殘缺而失敗。\n最後攔截到的錯誤：${lastError}`
   });
 }
