@@ -311,27 +311,59 @@ async function runAI(){
   switchTab('result');
   startProgress();
 
-  const topNNum = parseInt(topN);
-  const prompt=`你是台灣股市分析師。請從台股上市公司挑出${topNNum}檔推薦標的，股價須低於${priceLimit}元。
+  const topNNum = Math.min(parseInt(topN)||10, 10);
+  const ctx = `日期:${date} 大盤:${market} 外資:${foreign} 類股:${sector||'無'} 風格:${style} 風險:${risk} 事件:${note||'無'}`;
 
-條件：${market}，${foreign}，類股焦點：${sector||'無'}，風格：${style}，風險：${risk}，事件：${note||'無'}
+  function makePrompt(batch, batchNum, total){
+    return `你是台灣股市分析師。請從台股上市公司挑出${batch}檔推薦標的（股價低於${priceLimit}元）。
+${ctx}
+${batchNum>1?`這是第${batchNum}批，請挑選與第一批不同的標的。`:''}
+只回傳JSON陣列，${batch}個元素，不要其他文字：
+[{"code":"代碼","name":"名稱","sector":"板塊","est_price":數字,"momentum":"強勢突破或溫和上攻或盤整或短線回調","score":85,"reasons":["理由1","理由2"],"strategy":"策略建議","risk":"主要風險"}]`;
+  }
 
-只回傳JSON，格式如下，stocks陣列必須有${topNNum}個元素：
-{"summary":"市場簡評","stocks":[{"code":"代碼","name":"名稱","sector":"板塊","est_price":數字,"momentum":"強勢突破","score":85,"reasons":["理由1","理由2"],"strategy":"策略","risk":"風險"}],"watchlist":["代碼 名稱"],"key_note":"明日重點"}`;
+  function makeSummaryPrompt(){
+    return `台灣股市分析師，請根據以下條件給出今日市場簡評與明日操盤重點（各1-2句），只回傳JSON：
+${ctx}
+{"summary":"市場簡評","key_note":"明日重點","watchlist":["推薦觀察的代碼 名稱"]}`;
+  }
+
+  function parseJSON(raw){
+    let s = raw.trim().replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+    const a = s.indexOf('['), b = s.lastIndexOf(']');
+    const c = s.indexOf('{'), d = s.lastIndexOf('}');
+    if(a!==-1 && b!==-1 && (c===-1 || a<c)) return JSON.parse(s.slice(a,b+1));
+    if(c!==-1 && d!==-1) return JSON.parse(s.slice(c,d+1));
+    return JSON.parse(s);
+  }
 
   try{
-    const raw=await callAI(prompt,4000);
+    // Call 1: first 5 stocks
+    const batch1 = Math.min(topNNum, 5);
+    const raw1 = await callAI(makePrompt(batch1,1,topNNum), 2000);
+    let stocks = [];
+    try{ stocks = parseJSON(raw1); if(!Array.isArray(stocks)) stocks=[]; } catch(e){ stocks=[]; }
+
+    // Call 2: next 5 stocks if needed
+    if(topNNum > 5){
+      const batch2 = topNNum - 5;
+      const raw2 = await callAI(makePrompt(batch2,2,topNNum), 2000);
+      try{ const s2 = parseJSON(raw2); if(Array.isArray(s2)) stocks = stocks.concat(s2); } catch(e){}
+    }
+
+    // Call 3: summary
+    const raw3 = await callAI(makeSummaryPrompt(), 500);
+    let meta = {summary:'',key_note:'',watchlist:[]};
+    try{ meta = parseJSON(raw3); } catch(e){}
+
     stopProgress();
-    let parsed;
-    try{
-      let jsonStr=raw.trim().replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
-      const s=jsonStr.indexOf('{'), e=jsonStr.lastIndexOf('}');
-      if(s!==-1&&e!==-1) jsonStr=jsonStr.slice(s,e+1);
-      parsed=JSON.parse(jsonStr);
-    } catch(e){
-      document.getElementById('r-content').innerHTML=`<div class="card"><div class="err-box">AI 回傳格式異常，請重試。<br><br><span style="font-size:10px;opacity:.7">${e.message}</span></div></div>`;
+
+    if(stocks.length===0){
+      document.getElementById('r-content').innerHTML=`<div class="card"><div class="err-box">AI 未能返回有效選股結果，請重試。</div></div>`;
       btn.disabled=false; return;
     }
+
+    const parsed = { summary: meta.summary||'', stocks, watchlist: meta.watchlist||[], key_note: meta.key_note||'' };
     try{
       const h=JSON.parse(localStorage.getItem('twai_gm')||'[]');
       h.unshift({date,priceLimit,market,parsed});
