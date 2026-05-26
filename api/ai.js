@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   const { market_status, foreign_investment, style, risk, notes } = req.body || {};
 
-  const prompt = `
+ const prompt = `
 請根據以下條件，推薦 3 檔符合條件的台股個股，並給出具體投資策略：
 1. 大盤走勢：${market_status || '未指定'}
 2. 外資動向：${foreign_investment || '未指定'}
@@ -20,15 +20,37 @@ export default async function handler(req, res) {
 5. 特殊事件/盤前資訊：${notes || '無'}
 
 請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記、註解或客套話。
-必須確保每個欄位名稱完全與範例一致。所有數值欄位請一律直接用「數字」或「字串」，嚴禁包含任何換行符：
+為了相容前端所有可能的欄位命名，請幫我把每一個股票物件「完整填滿」以下所有重複的欄位（包含中文與英文變體）：
 
 [
   {
     "id": "2330",
+    "stock_id": "2330",
+    "code": "2330",
+    "symbol": "2330",
+    "股票代號": "2330",
+    "代號": "2330",
+
     "name": "台積電",
+    "stock_name": "台積電",
+    "股票名稱": "台積電",
+    "名稱": "台積電",
+
     "market": "半導體",
+    "category": "半導體",
+    "sector": "半導體",
+    "板塊": "半導體",
+    "產業": "半導體",
+
     "price": "900",
+    "current_price": "900",
+    "現價": "900",
+
     "valuation": "950",
+    "target_price": "950",
+    "estimate_price": "950",
+    "估價": "950",
+
     "momentum": "強勢突破",
     "score": "90",
     "reason": "符合動能突破與外資大量買超條件。",
