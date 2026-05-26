@@ -1,7 +1,4 @@
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -57,13 +54,38 @@ module.exports = async function handler(req, res) {
 
       if (!text) { lastError = '回傳空白'; continue; }
 
-      // Clean up markdown formatting that Gemini sometimes adds
+      // Aggressively clean non-JSON content
       text = text
         .replace(/```json\s*/gi, '')
         .replace(/```\s*/g, '')
-        .replace(/^\s*\*\s+/gm, '')   // remove bullet points "* "
-        .replace(/\*\*/g, '')          // remove bold **
+        .replace(/^\s*\*\s+/gm, '')
+        .replace(/\*\*/g, '')
         .trim();
+
+      // Extract only the JSON array or object, discard everything else
+      const arrStart = text.indexOf('[');
+      const arrEnd = text.lastIndexOf(']');
+      const objStart = text.indexOf('{');
+      const objEnd = text.lastIndexOf('}');
+
+      if (arrStart !== -1 && arrEnd > arrStart) {
+        text = text.slice(arrStart, arrEnd + 1);
+      } else if (objStart !== -1 && objEnd > objStart) {
+        text = text.slice(objStart, objEnd + 1);
+      }
+
+      // Remove any lines that are not part of JSON (rating/comment lines like "(4) - OK")
+      // Keep only lines that look like JSON
+      const lines = text.split('\n');
+      const jsonLines = lines.filter(line => {
+        const t = line.trim();
+        if (!t) return true; // keep empty lines
+        // Skip lines that look like ratings/comments (e.g. "(4) - OK", "- 理由")
+        if (/^\s*\([\d]+\)\s*-/.test(t)) return false;
+        if (/^[^\[{\]}"',:\d\-]/.test(t) && !t.startsWith('"')) return false;
+        return true;
+      });
+      text = jsonLines.join('\n');
 
       return res.status(200).json({ text, model });
 
@@ -77,3 +99,4 @@ module.exports = async function handler(req, res) {
     error: `所有模型額度已用完，請至 https://aistudio.google.com 確認帳號或升級方案。\n\n${lastError}`
   });
 };
+
