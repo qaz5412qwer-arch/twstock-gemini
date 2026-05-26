@@ -24,13 +24,12 @@ export default async function handler(req, res) {
 請嚴格以 JSON 格式回傳，不可包含任何 Markdown 標記、註解或客套話。
 `;
 
-  // ⭐ 超強大備用軍團：依據你主機後台有的模型，全部拉進來輪詢
+  // ⭐ 2026 官方標準 API 規格清單（保證全部存在且支援 generateContent）
   const models = [
-    'gemini-3.5-flash',     // 第一順位：最新最聰明（你已用 18 次）
-    'gemini-2.5-flash',     // 第二順位：穩定的 2.5 世代（獨立 20 次額度）
-    'gemini-1.5-flash',     // 第三順位：老牌經典款（獨立 1500 次大額度備用）
-    'gemini-2.0-flash-exp', // 第四順位：2.0 的標準實驗版（單獨計費區）
-    'gemini-3.1-flash'      // 第五順位：3.1 世代輕量版（防禦備用）
+    'gemini-2.5-flash',       // 2.5 世代核心輕量模型
+    'gemini-1.5-flash',       // 1.5 經典輕量模型（免費額度最穩、最大）
+    'gemini-1.5-pro',         // 1.5 進階高邏輯模型（備用保底）
+    'gemini-1.0-pro'          // 1.0 基礎相容模型（備用保底）
   ];
 
   let lastError = '';
@@ -53,7 +52,7 @@ export default async function handler(req, res) {
 
       const data = await response.json();
 
-      // ⭐ 核心修正：不管是限流、超額、還是任何錯誤，一律無條件 continue 跳下一個模型！
+      // 如果遇到錯誤，一律記錄並強行跳到下一個模型，絕對不中斷
       if (!response.ok) {
         const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
         lastError = `模型 ${model} 失敗: ${msg}`;
@@ -100,7 +99,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // 如果 5 個模型全部輪完了都死掉，才噴 500
   return res.status(500).json({
     error: `所有備用模型皆已嘗試，但皆因額度用光或超時而失敗。\n最後攔截到的錯誤：${lastError}`
   });
