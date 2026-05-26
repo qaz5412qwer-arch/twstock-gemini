@@ -12,7 +12,7 @@ module.exports = async function handler(req, res) {
   if (!prompt) return res.status(400).json({ error: '缺少 prompt' });
 
   try {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + apiKey;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,8 +20,7 @@ module.exports = async function handler(req, res) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           maxOutputTokens: maxTokens || 2000,
-          temperature: 0.7,
-          responseMimeType: 'application/json',
+          temperature: 0.5,
         },
       }),
     });
@@ -32,16 +31,19 @@ module.exports = async function handler(req, res) {
       return res.status(response.status).json({ error: msg });
     }
 
-    const text = data.candidates &&
-                 data.candidates[0] &&
-                 data.candidates[0].content &&
-                 data.candidates[0].content.parts &&
-                 data.candidates[0].content.parts[0] &&
-                 data.candidates[0].content.parts[0].text || '';
+    const text = (
+      data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      data.candidates[0].content.parts &&
+      data.candidates[0].content.parts[0] &&
+      data.candidates[0].content.parts[0].text
+    ) || '';
 
-    if (!text) return res.status(500).json({ error: 'Gemini 回傳空白內容，請重試' });
+    if (!text) return res.status(500).json({ error: 'Gemini 回傳空白內容' });
     res.status(200).json({ text });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 };
+
