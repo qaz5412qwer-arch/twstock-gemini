@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股 AI 選股系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0c10; --sf:#111520; --sf2:#161b28;
+  --b:rgba(255,255,255,0.07); --b2:rgba(255,255,255,0.13);
+  --ac:#00e5a0; --ac2:#0090ff; --dg:#ff4d6d; --wn:#ffb84d;
+  --tx:#e8ecf4; --tx2:#7a8399; --tx3:#454d62;
+  --mn:'Space Mono',monospace; --bd:'Noto Sans TC',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--tx);font-family:var(--bd);font-size:14px;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,160,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,160,.025) 1px,transparent 1px);background-size:44px 44px;pointer-events:none;z-index:0;}
+.glow{position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse,rgba(0,229,160,.06) 0%,transparent 70%);pointer-events:none;z-index:0;}
+.app{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 80px;}
+
+header{padding:28px 0 22px;border-bottom:1px solid var(--b);margin-bottom:28px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.logo-tag{font-family:var(--mn);font-size:9px;letter-spacing:.2em;color:var(--ac);text-transform:uppercase;display:block;margin-bottom:5px;}
+.logo-title{font-family:var(--mn);font-size:22px;font-weight:700;letter-spacing:-.02em;}
+.logo-title span{color:var(--ac);}
+.live{display:inline-flex;align-items:center;gap:5px;font-family:var(--mn);font-size:9px;color:var(--ac);}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--ac);animation:pulse 2s ease infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+#clock{font-family:var(--mn);font-size:10px;color:var(--tx3);margin-top:3px;}
+
+.tabs{display:flex;gap:3px;margin-bottom:24px;background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:4px;width:fit-content;}
+.tab{padding:7px 16px;border-radius:7px;font-size:11px;font-family:var(--mn);letter-spacing:.04em;cursor:pointer;border:none;background:transparent;color:var(--tx2);transition:all .2s;text-transform:uppercase;}
+.tab:hover{color:var(--tx);}
+.tab.active{background:var(--sf2);color:var(--ac);border:1px solid rgba(0,229,160,.2);}
+.panel{display:none;}
+.panel.show{display:block;animation:fadeIn .3s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
+
+.card{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:18px 22px;margin-bottom:14px;position:relative;overflow:hidden;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,229,160,.2),transparent);}
+.ct{font-family:var(--mn);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);margin-bottom:14px;display:flex;align-items:center;gap:7px;}
+.ct::before{content:'';width:3px;height:3px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac);}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+@media(max-width:680px){.g2,.g4{grid-template-columns:1fr;}}
+@media(max-width:880px){.g4{grid-template-columns:1fr 1fr;}}
+
+.metric{background:var(--sf2);border:1px solid var(--b);border-radius:8px;padding:14px;}
+.ml{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:6px;font-family:var(--mn);}
+.mv{font-family:var(--mn);font-size:20px;font-weight:700;}
+.mv.ac{color:var(--ac);}
+.mv.sm{font-size:13px;line-height:1.5;}
+
+label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);display:block;margin-bottom:7px;font-family:var(--mn);}
+input,select,textarea{width:100%;background:var(--sf2);border:1px solid var(--b);border-radius:8px;padding:9px 12px;color:var(--tx);font-family:var(--bd);font-size:13px;outline:none;transition:border-color .2s;}
+input:focus,select:focus,textarea:focus{border-color:rgba(0,229,160,.4);}
+select option{background:var(--sf2);}
+textarea{resize:vertical;font-family:var(--mn);font-size:11px;line-height:1.8;}
+.fg{margin-bottom:12px;}
+
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:8px;font-size:11px;font-family:var(--mn);letter-spacing:.05em;cursor:pointer;border:1px solid var(--b);background:transparent;color:var(--tx2);transition:all .2s;text-transform:uppercase;}
+.btn:hover{color:var(--tx);border-color:var(--b2);background:var(--sf2);}
+.btn:active{transform:scale(.98);}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+.btn-g{background:rgba(0,229,160,.1);border-color:rgba(0,229,160,.3);color:var(--ac);}
+.btn-g:hover{background:rgba(0,229,160,.18);}
+.btn-b{background:rgba(0,144,255,.1);border-color:rgba(0,144,255,.3);color:var(--ac2);}
+.btn-b:hover{background:rgba(0,144,255,.18);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);padding:8px 10px;text-align:left;border-bottom:1px solid var(--b);}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--b);font-size:12px;vertical-align:middle;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:var(--sf2);}
+.code{font-family:var(--mn);font-weight:700;font-size:12px;}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--mn);font-size:9px;font-weight:700;}
+.bu{background:rgba(0,229,160,.1);color:var(--ac);border:1px solid rgba(0,229,160,.2);}
+.bd{background:rgba(255,77,109,.1);color:var(--dg);border:1px solid rgba(255,77,109,.2);}
+.bn{background:rgba(255,255,255,.04);color:var(--tx2);border:1px solid var(--b);}
+.bw{background:rgba(255,184,77,.1);color:var(--wn);border:1px solid rgba(255,184,77,.2);}
+.rtag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;background:rgba(0,144,255,.1);color:var(--ac2);border:1px solid rgba(0,144,255,.2);margin:2px;}
+
+.sr{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:2px solid;font-family:var(--mn);font-size:11px;font-weight:700;}
+.sr-h{border-color:var(--ac);color:var(--ac);background:rgba(0,229,160,.08);}
+.sr-m{border-color:var(--wn);color:var(--wn);background:rgba(255,184,77,.08);}
+.sr-l{border-color:var(--dg);color:var(--dg);background:rgba(255,77,109,.08);}
+
+.ai-out{background:var(--sf2);border:1px solid var(--b);border-radius:8px;padding:16px;font-size:12px;line-height:2;color:var(--tx);white-space:pre-wrap;}
+
+.ld-wrap{display:flex;flex-direction:column;align-items:center;padding:52px 0;gap:14px;}
+.spinner{width:32px;height:32px;border:2px solid var(--b2);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.ld-txt{font-family:var(--mn);font-size:10px;color:var(--tx3);letter-spacing:.1em;animation:blink 1.5s ease infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.prog-bar{width:200px;height:3px;background:var(--sf2);border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:2px;background:var(--ac);transition:width .4s ease;}
+
+.empty{text-align:center;padding:52px 24px;color:var(--tx3);}
+.empty-ico{font-size:30px;opacity:.3;margin-bottom:10px;}
+.empty-txt{font-family:var(--mn);font-size:10px;letter-spacing:.08em;}
+
+.warn-box{background:rgba(255,184,77,.06);border:1px solid rgba(255,184,77,.2);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--wn);margin-top:14px;line-height:1.7;font-family:var(--mn);}
+.err-box{background:rgba(255,77,109,.06);border:1px solid rgba(255,77,109,.25);border-radius:8px;padding:14px;font-size:11px;color:var(--dg);font-family:var(--mn);line-height:1.8;}
+
+.hist-item{border:1px solid var(--b);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--sf2);}
+.hist-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+details summary{cursor:pointer;font-family:var(--mn);font-size:9px;color:var(--tx3);letter-spacing:.08em;text-transform:uppercase;list-style:none;}
+details summary::before{content:'▶ ';}
+details[open] summary::before{content:'▼ ';}
+details[open] summary{color:var(--ac);}
+
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--sf2);border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="app">
+
+<header>
+  <div>
+    <span class="logo-tag">Taiwan Stock · Quantitative AI</span>
+    <div class="logo-title">台股 <span>AI</span> 選股系統</div>
+  </div>
+  <div style="text-align:right">
+    <div class="live"><span class="dot"></span>SYSTEM ONLINE</div>
+    <div id="clock"></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('setup')">選股設定</button>
+  <button class="tab" onclick="switchTab('result')">選股結果</button>
+  <button class="tab" onclick="switchTab('history')">歷史記錄</button>
+  <button class="tab" onclick="switchTab('about')">說明</button>
+</div>
+
+<!-- SETUP -->
+<div id="panel-setup" class="panel show">
+  <div class="g2">
+    <div class="card">
+      <div class="ct">篩選條件</div>
+      <div class="g2" style="gap:10px;margin-bottom:0">
+        <div class="fg" style="margin:0"><label>分析日期</label><input type="date" id="p-date"></div>
+        <div class="fg" style="margin:0"><label>價格上限 (元)</label><input type="number" id="p-price" value="100" min="10" max="999"></div>
+        <div class="fg" style="margin:0"><label>動能天數</label><input type="number" id="p-days" value="5" min="1" max="20"></div>
+        <div class="fg" style="margin:0"><label>選股數量</label><input type="number" id="p-topn" value="10" min="3" max="20"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct">市場背景</div>
+      <div class="fg"><label>大盤走勢</label>
+        <select id="p-market">
+          <option value="強勢上漲，加權指數大漲逾1%">強勢上漲 ▲▲</option>
+          <option value="小幅上漲，加權指數漲0.5%以內" selected>小幅上漲 ↑</option>
+          <option value="高檔盤整，指數維持平盤附近">盤整 →</option>
+          <option value="小幅下跌，加權指數跌0.5%以內">小幅下跌 ↓</option>
+          <option value="明顯下跌，加權指數跌逾1%">明顯下跌 ▼▼</option>
+        </select>
+      </div>
+      <div class="fg"><label>外資動向</label>
+        <select id="p-foreign">
+          <option value="外資大量買超">外資大量買超</option>
+          <option value="外資小幅買超" selected>外資小幅買超</option>
+          <option value="外資持平">外資持平</option>
+          <option value="外資小幅賣超">外資小幅賣超</option>
+          <option value="外資大量賣超">外資大量賣超</option>
+        </select>
+      </div>
+      <div class="fg" style="margin:0"><label>類股焦點</label><input type="text" id="p-sector" placeholder="例：航運, 金融, 半導體"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="ct">投資偏好</div>
+    <div class="g2">
+      <div>
+        <div class="fg"><label>選股風格</label>
+          <select id="p-style">
+            <option value="動能突破型，偏好短線強勢股">動能突破型（短線）</option>
+            <option value="低檔佈局型，偏好相對低位等待反彈" selected>低檔佈局型（找低位）</option>
+            <option value="趨勢跟隨型，偏好中期上升趨勢清晰">趨勢跟隨型（中期）</option>
+            <option value="防禦型，偏好獲利穩定高股息">防禦型（穩健）</option>
+          </select>
+        </div>
+        <div class="fg" style="margin:0"><label>風險承受度</label>
+          <select id="p-risk">
+            <option value="保守，偏好低波動標的">保守</option>
+            <option value="穩健，可接受中等波動" selected>穩健</option>
+            <option value="積極，可接受高波動高報酬">積極</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label>特殊事件 / 盤前資訊</label>
+        <textarea id="p-note" rows="4" placeholder="例：Fed 昨晚維持利率、台積電法說今日、Q1財報優於預期..."></textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-g" id="run-btn" onclick="runAI()">▶ 讓 AI 選股</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESULT -->
+<div id="panel-result" class="panel">
+  <div id="r-ld" style="display:none">
+    <div class="ld-wrap">
+      <div class="spinner"></div>
+      <div class="ld-txt" id="ld-msg">AI 分析師正在選股中...</div>
+      <div class="prog-bar"><div class="prog-fill" id="prog" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div id="r-content">
+    <div class="card"><div class="empty"><div class="empty-ico">◈</div><div class="empty-txt">請先在「選股設定」執行 AI 選股</div></div></div>
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div id="panel-history" class="panel">
+  <div class="card">
+    <div class="ct">每日選股記錄</div>
+    <div id="hist-list"><div class="empty" style="padding:32px 0"><div class="empty-ico">⊡</div><div class="empty-txt">尚無記錄</div></div></div>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<div id="panel-about" class="panel">
+  <div class="card">
+    <div class="ct">系統說明</div>
+    <div style="font-size:13px;color:var(--tx2);line-height:2.3;">
+      <p>• <span style="color:var(--tx)">不需輸入股價</span>：AI 根據訓練知識主動挑選符合條件的標的</p>
+      <p>• <span style="color:var(--tx)">評分 0–100</span>：綜合動能強度、價格低位、趨勢穩定性、類股加成計算</p>
+      <p>• <span style="color:var(--tx)">AI 分析按鈕</span>：對單一標的進行深度個股報告（進場、目標價、停損）</p>
+      <p>• <span style="color:var(--tx)">歷史記錄</span>：每次選股結果自動存於瀏覽器，供日後回測對照</p>
+      <p>• <span style="color:var(--tx)">完全免費</span>：使用 Google Gemini API，對所有使用者免費開放</p>
+    </div>
+    <div class="warn-box">⚠ 所有 AI 分析內容僅供參考，不構成任何投資建議。股市投資具有風險，請充分了解後自行決策並負責。AI 估價有知識截止日限制，操作前請確認實際報價。</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const API_ENDPOINT = '/api/ai';
+
+function tick(){ document.getElementById('clock').textContent = new Date().toLocaleString('zh-TW',{hour12:false}); }
+tick(); setInterval(tick,1000);
+document.getElementById('p-date').value = new Date().toISOString().split('T')[0];
+
+const TABS = ['setup','result','history','about'];
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',TABS[i]===name));
+  TABS.forEach(t=>{
+    const p=document.getElementById('panel-'+t);
+    p.classList.toggle('show',t===name);
+    p.style.display=t===name?'block':'none';
+  });
+  if(name==='history') renderHistory();
+}
+TABS.forEach(t=>{ document.getElementById('panel-'+t).style.display=t==='setup'?'block':'none'; });
+
+let progTimer;
+const progMsgs=['掃描台股上市公司...','評估動能與趨勢...','分析板塊輪動...','產生選股報告...'];
+function startProgress(){
+  let pct=0;
+  document.getElementById('prog').style.width='0%';
+  document.getElementById('r-ld').style.display='block';
+  document.getElementById('r-content').innerHTML='';
+  progTimer=setInterval(()=>{
+    pct+=1.1; if(pct>92)pct=92;
+    document.getElementById('prog').style.width=pct+'%';
+    document.getElementById('ld-msg').textContent=progMsgs[Math.min(Math.floor(pct/25),3)];
+  },200);
+}
+function stopProgress(){
+  clearInterval(progTimer);
+  document.getElementById('prog').style.width='100%';
+  setTimeout(()=>document.getElementById('r-ld').style.display='none',300);
+}
+
+async function callAI(prompt, maxTokens=2500){
+  const resp=await fetch(API_ENDPOINT,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prompt,maxTokens})
+  });
+  if(!resp.ok){ const e=await resp.json().catch(()=>({})); throw new Error(e.error||'HTTP '+resp.status); }
+  const data=await resp.json();
+  return data.text||'';
+}
+
+async function runAI(){
+  const date=document.getElementById('p-date').value;
+  const priceLimit=document.getElementById('p-price').value;
+  const days=document.getElementById('p-days').value;
+  const topN=document.getElementById('p-topn').value;
+  const market=document.getElementById('p-market').value;
+  const foreign=document.getElementById('p-foreign').value;
+  const sector=document.getElementById('p-sector').value;
+  const style=document.getElementById('p-style').value;
+  const risk=document.getElementById('p-risk').value;
+  const note=document.getElementById('p-note').value;
+
+  const btn=document.getElementById('run-btn');
+  btn.disabled=true;
+  switchTab('result');
+  startProgress();
+
+  const prompt=`你是一位台灣股市量化選股分析師，請根據以下條件，從台灣上市公司中主動挑選今日推薦標的，給出完整選股報告。
+
+【分析日期】${date}
+【篩選條件】股價上限：${priceLimit}元 / 動能觀察：${days}個交易日 / 建議股數：${topN}檔
+【市場環境】大盤：${market} / 外資：${foreign} / 類股焦點：${sector||'無'}
+【投資偏好】${style} / 風險：${risk}
+【特殊事件】${note||'無'}
+
+請從台股上市公司中挑出 ${topN} 檔最符合條件的標的（股價須低於 ${priceLimit} 元）。
+只回傳純 JSON，不要任何其他文字或 markdown：
+{
+  "summary": "整體市場環境簡評（2-3句）",
+  "stocks": [
+    {
+      "code": "股票代碼",
+      "name": "公司名稱",
+      "sector": "所屬板塊",
+      "est_price": 估計現價數字,
+      "momentum": "強勢突破|溫和上攻|盤整|短線回調",
+      "score": 0到100整數,
+      "reasons": ["理由1","理由2","理由3"],
+      "strategy": "操作策略：進場區間、目標價、停損位（1-2句）",
+      "risk": "主要風險（1句）"
+    }
+  ],
+  "watchlist": ["代碼 名稱"],
+  "key_note": "明日操盤重點（1-2句）"
+}`;
+
+  try{
+    const raw=await callAI(prompt,2500);
+    stopProgress();
+    let parsed;
+    try{ parsed=JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch(e){
+      document.getElementById('r-content').innerHTML=`<div class="card"><div class="err-box">AI 回傳格式異常，請重試。</div></div>`;
+      btn.disabled=false; return;
+    }
+    try{
+      const h=JSON.parse(localStorage.getItem('twai_gm')||'[]');
+      h.unshift({date,priceLimit,market,parsed});
+      localStorage.setItem('twai_gm',JSON.stringify(h.slice(0,30)));
+    }catch(e){}
+    renderResult(parsed,date,priceLimit,days,market);
+  }catch(err){
+    stopProgress();
+    document.getElementById('r-content').innerHTML=`<div class="card"><div class="err-box">✗ 錯誤：${err.message}</div></div>`;
+  }
+  btn.disabled=false;
+}
+
+function renderResult(p,date,priceLimit,days,market){
+  const stocks=p.stocks||[];
+  window._stocks=stocks;
+  const maxS=Math.max(...stocks.map(s=>s.score),1);
+
+  const rows=stocks.map((s,i)=>{
+    const sc=s.score;
+    const ring=sc>=70?'sr sr-h':sc>=50?'sr sr-m':'sr sr-l';
+    const momCls=s.momentum.includes('強勢')||s.momentum.includes('上攻')?'bu':s.momentum.includes('回調')?'bd':'bn';
+    const tags=(s.reasons||[]).map(r=>`<span class="rtag">${r}</span>`).join('');
+    return `<tr>
+      <td><span style="font-family:var(--mn);font-size:10px;color:${i<3?'var(--ac)':'var(--tx3)'}">${String(i+1).padStart(2,'0')}</span></td>
+      <td><div class="code">${s.code}</div><div style="font-size:10px;color:var(--tx2)">${s.name}</div></td>
+      <td><span style="font-family:var(--mn);font-size:10px;color:var(--tx3)">${s.sector}</span></td>
+      <td><span style="font-family:var(--mn);font-size:11px;color:var(--wn)">≈${s.est_price}</span></td>
+      <td><span class="badge ${momCls}">${s.momentum}</span></td>
+      <td><div class="${ring}">${sc}</div></td>
+      <td style="max-width:180px">${tags}</td>
+      <td><button class="btn btn-b" style="padding:4px 10px;font-size:9px;" onclick="aiDeep(${i})">分析 ↗</button></td>
+    </tr>`;
+  }).join('');
+
+  const watches=(p.watchlist||[]).map(w=>`<span class="badge bn" style="margin:2px">${w}</span>`).join('');
+
+  document.getElementById('r-content').innerHTML=`
+    <div class="g4">
+      <div class="metric"><div class="ml">日期</div><div class="mv sm">${date}</div></div>
+      <div class="metric"><div class="ml">推薦</div><div class="mv ac">${stocks.length} 檔</div></div>
+      <div class="metric"><div class="ml">大盤</div><div class="mv sm">${market.split('，')[0]}</div></div>
+      <div class="metric"><div class="ml">最高分</div><div class="mv ac">${maxS}</div></div>
+    </div>
+    <div class="card">
+      <div class="ct">市場環境評估</div>
+      <p style="font-size:12px;color:var(--tx2);line-height:2">${p.summary||''}</p>
+    </div>
+    <div class="card">
+      <div class="ct">AI 選股排名（低於 ${priceLimit} 元）</div>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr><th>序</th><th>股票</th><th>板塊</th><th>估價</th><th>動能</th><th>分</th><th>選股理由</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p style="font-size:10px;color:var(--tx3);font-family:var(--mn);margin-top:8px">※ 估價為 AI 推算，操作前請以券商報價為準</p>
+    </div>
+    ${watches?`<div class="card"><div class="ct">觀察名單</div><div style="display:flex;flex-wrap:wrap;gap:5px">${watches}</div></div>`:''}
+    ${p.key_note?`<div class="card"><div class="ct">明日操盤重點</div><p style="font-size:12px;color:var(--tx2);line-height:2">${p.key_note}</p></div>`:''}
+    <div id="deep-panel"></div>
+    <div class="btn-row">
+      <button class="btn" onclick="switchTab('setup')">重新設定</button>
+      <button class="btn" onclick="switchTab('history')">歷史記錄</button>
+    </div>
+    <div class="warn-box">⚠ AI 估價與分析僅供參考，不構成投資建議。請確認實際股價後自行評估風險。</div>`;
+}
+
+async function aiDeep(idx){
+  const s=window._stocks[idx];
+  const market=document.getElementById('p-market').value;
+  const note=document.getElementById('p-note').value;
+  const panel=document.getElementById('deep-panel');
+  panel.innerHTML=`<div class="card"><div class="ct">AI 深度分析 · ${s.code} ${s.name}</div>
+    <div class="ld-wrap"><div class="spinner"></div><div class="ld-txt">分析 ${s.code} 中...</div></div></div>`;
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+
+  const prompt=`台灣股市專業分析師，請對以下個股進行深度操作策略分析：
+【個股】${s.code} ${s.name}（${s.sector}）
+【估計價格】約 ${s.est_price} 元 / 動能：${s.momentum} / 評分：${s.score}/100
+【選股理由】${(s.reasons||[]).join('、')}
+【市場背景】${market}
+【特殊事件】${note||'無'}
+
+請提供：
+1. 📊 個股評估（技術面+基本面概況，2-3句）
+2. ⚡ 操作策略（多方/觀望/空方 + 理由）
+3. 🎯 關鍵價位（進場區間、目標價、停損位，具體數字）
+4. ⚠️ 主要風險（1-2點）
+5. 📅 短期展望（3-5個交易日）
+繁體中文，語氣專業直接。`;
+
+  try{
+    const text=await callAI(prompt,1000);
+    const fmt=text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ac)">$1</strong>');
+    panel.innerHTML=`<div class="card">
+      <div class="ct">AI 深度分析 · ${s.code} ${s.name}</div>
+      <div class="g2" style="margin-bottom:14px">
+        <div>
+          <div style="font-family:var(--mn);font-size:9px;letter-spacing:.1em;color:var(--tx3);text-transform:uppercase;margin-bottom:6px">選股理由</div>
+          <div style="display:flex;flex-wrap:wrap">${(s.reasons||[]).map(r=>`<span class="rtag">${r}</span>`).join('')}</div>
+          <div style="margin-top:12px">
+            <div style="font-family:var(--mn);font-size:9px;letter-spacing:.1em;color:var(--tx3);text-transform:uppercase;margin-bottom:5px">策略摘要</div>
+            <p style="font-size:12px;color:var(--tx2);line-height:1.8">${s.strategy||''}</p>
+          </div>
+        </div>
+        <div>
+          <div style="font-family:var(--mn);font-size:9px;letter-spacing:.1em;color:var(--tx3);text-transform:uppercase;margin-bottom:6px">綜合評分</div>
+          <div style="font-family:var(--mn);font-size:40px;font-weight:700;color:${s.score>=70?'var(--ac)':s.score>=50?'var(--wn)':'var(--dg)'}">
+            ${s.score}<span style="font-size:14px;color:var(--tx3)">/100</span></div>
+          <div style="margin-top:10px"><span class="badge ${s.momentum.includes('強勢')||s.momentum.includes('上攻')?'bu':'bn'}">${s.momentum}</span></div>
+        </div>
+      </div>
+      <div style="font-family:var(--mn);font-size:9px;letter-spacing:.1em;color:var(--tx3);text-transform:uppercase;margin-bottom:8px">Gemini AI 深度報告</div>
+      <div class="ai-out">${fmt}</div>
+      <div class="warn-box" style="font-size:10px">⚠ 以上分析僅供參考，不構成投資建議。</div>
+    </div>`;
+  }catch(err){
+    panel.innerHTML=`<div class="card"><div class="err-box">✗ ${err.message}</div></div>`;
+  }
+}
+
+function renderHistory(){
+  const el=document.getElementById('hist-list');
+  let h=[];
+  try{h=JSON.parse(localStorage.getItem('twai_gm')||'[]');}catch(e){}
+  if(!h.length){
+    el.innerHTML=`<div class="empty" style="padding:32px 0"><div class="empty-ico">⊡</div><div class="empty-txt">尚無記錄</div></div>`;
+    return;
+  }
+  el.innerHTML=h.map(r=>{
+    const stocks=r.parsed?.stocks||[];
+    const tags=stocks.slice(0,5).map(s=>`<span class="badge ${s.score>=70?'bu':s.score>=50?'bw':'bn'}">${s.code} ${s.score}分</span>`).join('');
+    return `<div class="hist-item">
+      <div class="hist-hd">
+        <span style="font-family:var(--mn);font-size:11px;color:var(--ac)">${r.date}</span>
+        <span style="font-family:var(--mn);font-size:9px;color:var(--tx3)">${stocks.length}檔 · &lt;${r.priceLimit}元</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${tags}${stocks.length>5?`<span class="badge bn">+${stocks.length-5}</span>`:''}</div>
+      <details><summary>展開完整報告</summary>
+        <div style="margin-top:10px;overflow-x:auto">
+          <table class="tbl">
+            <thead><tr><th>代碼</th><th>名稱</th><th>估價</th><th>動能</th><th>評分</th></tr></thead>
+            <tbody>${stocks.map(s=>`<tr>
+              <td class="code">${s.code}</td>
+              <td style="font-size:11px">${s.name}</td>
+              <td style="font-family:var(--mn);font-size:11px;color:var(--wn)">≈${s.est_price}</td>
+              <td><span class="badge ${s.momentum.includes('強勢')||s.momentum.includes('上攻')?'bu':'bn'}">${s.momentum}</span></td>
+              <td style="font-family:var(--mn);color:${s.score>=70?'var(--ac)':s.score>=50?'var(--wn)':'var(--dg)'}">${s.score}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </details>
+    </div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>
