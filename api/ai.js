@@ -1,16 +1,19 @@
 export default async function handler(req, res) {
+  // 設定 CORS 標頭
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 未設定' });
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 未設定，請至 Vercel 後台填寫環境變數。' });
 
   const { prompt, maxTokens } = req.body || {};
   if (!prompt) return res.status(400).json({ error: '缺少 prompt' });
 
-  // 調整順序：將最新、最省 Token 且不易爆配額的 3.5-flash 放最前面
-  // 移除相容性低的 lite 避免浪費 Vercel 珍貴的 10 秒時間
+  // 調整順序：2026年首選最新主力 gemini-3.5-flash，Token 用量最小且速度最快
   const models = [
     'gemini-3.5-flash',
     'gemini-2.5-flash',
@@ -25,12 +28,11 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // 在 Prompt 後方加上結構化提示，雙重保險
-          contents: [{ parts: [{ text: prompt + "\n\n請務必、嚴格以 JSON 格式回傳，不要包含任何 Markdown 語法或客套話。" }] }],
+          contents: [{ parts: [{ text: prompt + "\n\n請嚴格以 JSON 格式回傳，不可包含任何 Markdown 標記、註解或客套話。" }] }],
           generationConfig: {
-            maxOutputTokens: maxTokens || 3000,
-            temperature: 0.2, // 降低溫度讓 AI 輸出結構更嚴謹、不胡言亂語
-            responseMimeType: "application/json" // ⭐ 核心優化：直接要求 Gemini 輸出純 JSON 格式
+            maxOutputTokens: maxTokens || 2000,
+            temperature: 0.1,             // 降低溫度，強迫 AI 嚴格遵循結構，拒絕胡言亂語
+            responseMimeType: "application/json" // ⭐ 核心優化：直接要求 Gemini 輸出標準 JSON，不帶任何雜質
           },
         }),
       });
@@ -39,6 +41,7 @@ export default async function handler(req, res) {
 
       if (!response.ok) {
         const msg = (data && data.error && data.error.message) ? data.error.message : JSON.stringify(data);
+        // 如果是配額爆了，記錄錯誤並切換到下一個模型
         if (msg.includes('quota') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED') || response.status === 429) {
           lastError = msg;
           continue;
@@ -55,12 +58,12 @@ export default async function handler(req, res) {
         data.candidates[0].content.parts[0].text
       ) || '';
 
-      if (!text) { lastError = '回傳空白'; continue; }
+      if (!text) { lastError = 'AI 回傳內容空白'; continue; }
 
-      // 基礎清理：只移除可能意外夾帶的 Markdown 標記，不破壞內部換行
+      // 基礎清洗：移除任何可能意外夾帶的 ```json 標記
       text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
-      // 安全截取：精準保留 JSON 陣列或物件的主體內容，拋棄前後可能夾帶的雜質
+      // 安全截取：精準擷取外層的大括號 {} 或 中括號 []
       const arrStart = text.indexOf('[');
       const arrEnd = text.lastIndexOf(']');
       const objStart = text.indexOf('{');
@@ -72,16 +75,16 @@ export default async function handler(req, res) {
         text = text.slice(objStart, objEnd + 1);
       }
 
-      // ⭐ 驗證機制：先在後端嘗試解析，確保格式百分之百健全
+      // ⭐ 格式安全檢查：在後端先進行 JSON 解析測試
       try {
         JSON.parse(text); 
       } catch (e) {
-        // 如果 JSON 在半路斷掉（例如超時），則紀錄錯誤並跳過換下一個模型試試看
-        lastError = `JSON 格式不完整 (解析失敗): ${e.message}`;
+        // 如果此模型的 JSON 格式損壞，丟給下一個模型嘗試處理
+        lastError = `JSON 結構異常: ${e.message}`;
         continue;
       }
 
-      // 完全沒問題，回傳給前端 Streamlit
+      // 格式完全正確，回傳資料與使用的模型名稱
       return res.status(200).json({ text, model });
 
     } catch (err) {
@@ -90,8 +93,8 @@ export default async function handler(req, res) {
     }
   }
 
-  // 走到這裡代表所有模型都失敗了
-  return res.status(429).json({
-    error: `所有模型額度已用完，或因 Vercel 免費版 10 秒超時限制。請重新整理或至 Google AI Studio 檢查金鑰狀態。\n\n最後錯誤訊息：${lastError}`
+  // 若輪詢完所有模型都失敗，則輸出最終錯誤
+  return res.status(500).json({
+    error: `選股系統處理失敗。原因可能是 API 限流、資料過大或 Vercel 平台超時。\n詳細錯誤：${lastError}`
   });
 }
