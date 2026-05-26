@@ -10,65 +10,38 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 未設定，請至 Vercel 後台填寫環境變數。' });
 
   const input = req.body || {};
+  
+  // 💡 1. 動態捕捉前端的「價格上限」
   const limitPrice = input.price_limit || input.max_price || input.priceLimit || input.price || 100;
 
-  // 提示詞優化：加入現實股價常識約束，避免大立光變 98 元的笑話
+  // 💡 2. 徹底修正：動態捕捉前端的「選股數量」變數，不再鎖死 3 檔！（預設值給 3 作為保底）
+  const stockCount = input.stock_count || input.count || input.num_stocks || input.quantity || input.limit || input.stockCount || input.counts || 3;
+
+  // 提示詞：完全交由變數控制數量
   const prompt = `
-請根據以下條件，推薦 3 檔符合條件的台股個股，並給出具體投資策略：
+請根據以下條件，推薦精準 ${stockCount} 檔符合條件的台股個股，並給出具體投資策略：
 1. 大盤走勢：${input.market_status || '未指定'}
 2. 外資動向：${input.foreign_investment || '未指定'}
 3. 選股風格：${input.style || '動能突破型（短線）'}
 4. 風險承受度：${input.risk || '穩健'}
 5. 特殊事件/盤前資訊：${input.notes || '無'}
-6. ⚠️【核心硬性價格限制】：所選個股的「目前真實價格」絕對必須低於 ${limitPrice} 元！
-   【重要常識】：請優先挑選市場上原本就低於此價格的中低價概念股或金融股。絕對不要把大立光、台積電、聯發科、聯詠等幾百幾千元的高價股硬編成幾十元回傳！
+6. ⚠️【核心價格限制】：所選個股的「目前價格」絕對必須低於 ${limitPrice} 元！
+7. ⚠️【核心數量限制】：必須精準推薦 ${stockCount} 檔個股，不能多也不能少！
 
-請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記、註解或客套話。
-為了完美解鎖前端表格的【估價】與所有欄位，請必須幫我把每一個股票物件「完整填滿」以下所有重複變數：
+請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記、註解或客套話：
 
 [
   {
     "id": "2330",
-    "code": "2330",
-    "stockId": "2330",
-    "stock_id": "2330",
-    "stockCode": "2330",
-    "stock_code": "2330",
-
     "name": "台積電",
-    "stockName": "台積電",
-    "stock_name": "台積電",
-
     "market": "半導體",
-    "sector": "半導體",
-    "category": "半導體",
-    "industry": "半導體",
-
     "price": "90",
-    "currentPrice": "90",
-    "current_price": "90",
-
-    "valuation": "95",
     "targetPrice": "95",
-    "target_price": "95",
-    "estimatePrice": "95",
-    "estimate_price": "95",
-    "estimatedPrice": "95",
-    "estimated_price": "95",
-    "target": "95",
-    "estimate": "95",
-    "fairValue": "95",
-    "fair_value": "95",
-    "predictedPrice": "95",
-    "predicted_price": "95",
-    "valuationPrice": "95",
-    "valuation_price": "95",
-
     "momentum": "強勢突破",
     "score": "90",
-    "reason": "符合低價動能突破條件。",
+    "reason": "符合低價動能突破條件與外資大量買超條件。",
     "strategy": "於股價站穩突破點後進場，設定移動停損點。",
-    "risk": "注意低價股流動性修正壓力。"
+    "risk": "注意低價股流動性及板塊輪動修正壓力。"
   }
 ]
 `;
@@ -92,7 +65,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 3000,
+            maxOutputTokens: 3500, // 放大 Token 容許量，確保自訂高數量選股時不會斷頭
             temperature: 0.1,
             responseMimeType: "application/json"
           },
@@ -129,13 +102,43 @@ export default async function handler(req, res) {
       text = text.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); 
 
       try {
-        JSON.parse(text);
+        let parsedArray = JSON.parse(text);
+        if (!Array.isArray(parsedArray)) {
+          if (typeof parsedArray === 'object' && parsedArray !== null) {
+            parsedArray = [parsedArray];
+          } else {
+            parsedArray = [];
+          }
+        }
+
+        // 後端 JavaScript 暴力複製所有可能的欄位變體，保證解鎖估價、代號等所有前端表格
+        const completelyFilledArray = parsedArray.map(item => {
+          const p = item.price || item.currentPrice || item.current_price || "0";
+          const t = item.targetPrice || item.target_price || item.valuation || item.target || "0";
+          const idVal = item.id || item.code || item.stockId || "0000";
+          const nameVal = item.name || item.stockName || "未知";
+          const marketVal = item.market || item.industry || item.sector || "其他";
+
+          return {
+            ...item,
+            id: idVal, code: idVal, stockId: idVal, stock_id: idVal, stockCode: idVal, stock_code: idVal, symbol: idVal,
+            name: nameVal, stockName: nameVal, stock_name: nameVal,
+            market: marketVal, sector: marketVal, category: marketVal, industry: marketVal,
+            price: p, currentPrice: p, current_price: p, stockPrice: p, stock_price: p,
+            valuation: t, targetPrice: t, target_price: t, estimatePrice: t, estimate_price: t,
+            estimatedPrice: t, estimated_price: t, target: t, estimate: t, fairValue: t, fair_value: t,
+            predictedPrice: t, predicted_price: t, expectedPrice: t, expected_price: t, aiPrice: t, ai_price: t,
+            priceTarget: t, price_target: t, intrinsicValue: t, intrinsic_value: t, suggestedPrice: t, suggested_price: t,
+            predict: t, prediction: t, predictPrice: t, predict_price: t, futurePrice: t, future_price: t
+          };
+        });
+
+        return res.status(200).json({ text: JSON.stringify(completelyFilledArray), model: model });
+
       } catch (jsonErr) {
         lastError = `模型 ${model} 的 JSON 在後端驗證失敗: ${jsonErr.message}`;
         continue;
       }
-
-      return res.status(200).json({ text: text, model: model });
 
     } catch (err) {
       lastError = `程式異常 (${model}): ${err.message}`;
