@@ -12,7 +12,6 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     'gemini-2.0-flash-lite',
     'gemini-3.5-flash',
     'gemini-2.5-flash',
-    
   ];
 
   let lastError = '';
