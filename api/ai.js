@@ -29,6 +29,10 @@ export default async function handler(req, res) {
     'gemini-2.5-flash',       // 2.5 世代核心輕量模型
     'gemini-1.5-flash',       // 1.5 經典輕量模型（免費額度最穩、最大）
     'gemini-1.5-pro',         // 1.5 進階高邏輯模型（備用保底）
+    'Gemini 2.5 Pro',
+    'Gemini 2 Flash',
+    'Gemini 2 Flash Lite',
+    'Gemini 2.5 Flash Lite'
   ];
 
   let lastError = '';
