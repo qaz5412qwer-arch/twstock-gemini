@@ -9,13 +9,10 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 未設定，請至 Vercel 後台填寫環境變數。' });
 
-  // 接收前端所有傳過來的參數
   const input = req.body || {};
-  
-  // 💡 自動精準捕捉前端傳入的「價格上限」，相容所有可能的名字（預設為 100 元）
   const limitPrice = input.price_limit || input.max_price || input.priceLimit || input.price || 100;
 
-  // 提示詞：嚴格限制挑選的股票「目前價格」必須低於限價，並轟炸所有欄位變體
+  // 提示詞優化：加入現實股價常識約束，避免大立光變 98 元的笑話
   const prompt = `
 請根據以下條件，推薦 3 檔符合條件的台股個股，並給出具體投資策略：
 1. 大盤走勢：${input.market_status || '未指定'}
@@ -23,10 +20,11 @@ export default async function handler(req, res) {
 3. 選股風格：${input.style || '動能突破型（短線）'}
 4. 風險承受度：${input.risk || '穩健'}
 5. 特殊事件/盤前資訊：${input.notes || '無'}
-6. ⚠️【核心價格限制】：所選個股的「目前價格（現價）」絕對必須低於 ${limitPrice} 元！高於此價格的股票一律禁止推薦。
+6. ⚠️【核心硬性價格限制】：所選個股的「目前真實價格」絕對必須低於 ${limitPrice} 元！
+   【重要常識】：請優先挑選市場上原本就低於此價格的中低價概念股或金融股。絕對不要把大立光、台積電、聯發科、聯詠等幾百幾千元的高價股硬編成幾十元回傳！
 
 請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記、註解或客套話。
-為了完美解鎖前端表格的所有欄位，請必須幫我把每一個股票物件「完整填滿」以下所有重複及大小寫欄位：
+為了完美解鎖前端表格的【估價】與所有欄位，請必須幫我把每一個股票物件「完整填滿」以下所有重複變數：
 
 [
   {
@@ -36,7 +34,6 @@ export default async function handler(req, res) {
     "stock_id": "2330",
     "stockCode": "2330",
     "stock_code": "2330",
-    "symbol": "2330",
 
     "name": "台積電",
     "stockName": "台積電",
@@ -50,20 +47,28 @@ export default async function handler(req, res) {
     "price": "90",
     "currentPrice": "90",
     "current_price": "90",
-    "stockPrice": "90",
-    "stock_price": "90",
 
     "valuation": "95",
     "targetPrice": "95",
     "target_price": "95",
     "estimatePrice": "95",
     "estimate_price": "95",
+    "estimatedPrice": "95",
+    "estimated_price": "95",
+    "target": "95",
+    "estimate": "95",
+    "fairValue": "95",
+    "fair_value": "95",
+    "predictedPrice": "95",
+    "predicted_price": "95",
+    "valuationPrice": "95",
+    "valuation_price": "95",
 
     "momentum": "強勢突破",
     "score": "90",
-    "reason": "符合低價動能突破條件與外資大量買超條件。",
+    "reason": "符合低價動能突破條件。",
     "strategy": "於股價站穩突破點後進場，設定移動停損點。",
-    "risk": "注意低價股流動性及板塊輪動修正壓力。"
+    "risk": "注意低價股流動性修正壓力。"
   }
 ]
 `;
@@ -113,7 +118,6 @@ export default async function handler(req, res) {
 
       if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
-      // 移除所有 Markdown 外殼殘留
       text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
       const arrStart = text.indexOf('[');
@@ -122,10 +126,8 @@ export default async function handler(req, res) {
         text = text.slice(arrStart, arrEnd + 1);
       }
 
-      // 移除控制字元雜訊
       text = text.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); 
 
-      // 後端自檢：如果格式有歪，自己攔截換下一個模型，絕不把垃圾丟給前端
       try {
         JSON.parse(text);
       } catch (jsonErr) {
@@ -133,7 +135,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // 保證完全相容的外殼包裝回傳
       return res.status(200).json({ text: text, model: model });
 
     } catch (err) {
