@@ -14,9 +14,8 @@ module.exports = async function handler(req, res) {
   // Try models in order until one works
   const models = [
     'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-flash-latest',
-    'gemini-pro',
+    'gemini-3.5-flash',
+    'gemini-2.5-flash',
   ];
 
   let lastError = '';
