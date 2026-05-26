@@ -11,34 +11,35 @@ export default async function handler(req, res) {
 
   const { market_status, foreign_investment, style, risk, notes, maxTokens } = req.body || {};
 
-  // 調整提示詞：精準固定為 3 檔，減少字數避免爆 Token
+  // 提示詞：回歸前端預期的欄位格式，並且要求回傳純粹的 JSON 內容
   const prompt = `
-請根據以下台股市場背景與投資偏好，挑選並推薦「精準 3 檔」符合條件的台股個股，並給出具體的投資策略：
+請根據以下台股市場背景與投資偏好，挑選並推薦 3 檔符合條件的台股個股，並給出具體投資策略：
 1. 大盤走勢：${market_status || '未指定'}
 2. 外資動向：${foreign_investment || '未指定'}
 3. 選股風格：${style || '動能突破型（短線）'}
 4. 風險承受度：${risk || '穩健'}
 5. 特殊事件/盤前資訊：${notes || '無'}
 
-請嚴格依照下方的 JSON 陣列格式回傳資料，不可包含任何 Markdown 標記、註解或客套話。
-必須確保每個欄位名稱（如 name, id, price）完全與範例一致：
+請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記（如 \`\`\`json）、註解或客套話。
+必須確保每個欄位名稱（如 name, id, price, valuation, momentum, score, reason, strategy, risk）完全與範例一致：
 
 [
   {
     "id": "2330",
     "name": "台積電",
     "market": "半導體",
-    "price": 900,
-    "valuation": 950,
+    "price": "900",
+    "valuation": "950",
     "momentum": "強勢突破",
-    "score": 90,
+    "score": "90",
     "reason": "符合動能突破與外資大量買超條件，基本面強勁。",
-    "strategy": "於突破前波高點時進場，設定跌破5日均線為停損點，目標價設為估價。",
+    "strategy": "於突破前波高點時進場，設定跌破5日均線為停損點。",
     "risk": "高基期修正壓力及地緣政治風險。"
   }
 ]
 `;
 
+  // 2026 官方最嚴謹標準代號
   const models = [
     'gemini-2.5-flash',
     'gemini-3.1-flash-lite',
@@ -58,7 +59,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: maxTokens || 2500, // 稍微拉高最大 Token 限制
+            maxOutputTokens: maxTokens || 2500,
             temperature: 0.1,
             responseMimeType: "application/json"
           },
@@ -84,37 +85,18 @@ export default async function handler(req, res) {
 
       if (!text) { lastError = `模型 ${model} 回傳內容空白`; continue; }
 
-      // 基礎清洗
+      // 清洗掉所有可能夾帶的 Markdown 符號
       text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
       const arrStart = text.indexOf('[');
       const arrEnd = text.lastIndexOf(']');
-      
-      if (arrStart !== -1) {
-        if (arrEnd > arrStart) {
-          text = text.slice(arrStart, arrEnd + 1);
-        } else {
-          // 💡 核心防禦：如果找到了開頭 [ 但沒有結尾 ]，說明字數被切斷了，自動在結尾補上大括號與中括號
-          text = text.slice(arrStart);
-          if (!text.endsWith(']')) {
-            // 嘗試自動封閉未完成的 JSON 結構
-            if (text.endsWith('}')) text += ']';
-            else if (text.endsWith('"') || text.endsWith('0') || text.endsWith('1') || text.endsWith('2') || text.endsWith('3') || text.endsWith('4') || text.endsWith('5') || text.endsWith('6') || text.endsWith('7') || text.endsWith('8') || text.endsWith('9')) text += '}]';
-            else text += '"}]';
-          }
-        }
+      if (arrStart !== -1 && arrEnd > arrStart) {
+        text = text.slice(arrStart, arrEnd + 1);
       }
 
-      text = text.trim();
-
-      try {
-        const parsedData = JSON.parse(text); 
-        return res.status(200).json(parsedData); 
-      } catch (e) {
-        // ⭐ 如果自動補齊後依舊無法解析，交給下一個模型重新挑戰
-        lastError = `模型 ${model} 的 JSON 依然殘缺。錯誤: ${e.message}。原始文字末段: ${text.slice(-30)}`;
-        continue;
-      }
+      // ⭐ 終極修正：包回前端最一開始期待的物件結構！
+      // 你的前端網頁在拿到 Response 後，是用 data.text 去做處理的，所以必須這樣包回去！
+      return res.status(200).json({ text: text, model: model });
 
     } catch (err) {
       lastError = `程式異常 (${model}): ${err.message}`;
