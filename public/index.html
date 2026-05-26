@@ -294,15 +294,19 @@ async function run(){
 
   const ctx=`大盤${market}，${foreign}，類股焦點:${sector||'無'}，風格:${style}，風險:${risk}，事件:${note||'無'}`;
 
-  const stockPrompt=`你是台灣股市分析師。根據以下條件，從台股上市公司推薦${topN}檔標的（股價低於${price}元）。
-${ctx}，分析日期:${date}
+  const stockPrompt=`你是台灣股市分析師。根據條件推薦${topN}檔台股標的（股價低於${price}元）。
+條件：${ctx}，日期:${date}
 
-只輸出JSON陣列，從[開始到]結束，不要任何其他文字：
-[{"code":"2603","name":"長榮","sector":"航運","est_price":155,"momentum":"強勢突破","score":88,"reasons":["理由1","理由2","理由3"],"strategy":"進場區間150-158，目標180，停損140","risk":"運費回落風險"}]`;
+重要：你的回應必須是純JSON格式，不得包含任何markdown符號（*、**、#等），不得有換行縮排以外的特殊字元。
+直接輸出以下格式的JSON陣列：
+[{"code":"2603","name":"長榮","sector":"航運","current_price":158.5,"est_price":155,"momentum":"強勢突破","score":88,"reasons":["航運旺季","外資買超","突破前高"],"strategy":"進場150-158元，目標180元，停損140元","risk":"運費回落風險"}]
+
+欄位說明：current_price為該股近期實際成交價（根據你的訓練資料），est_price為你對合理價值的估算。
+只輸出JSON陣列本身，第一個字元必須是[，最後一個字元必須是]。`;
 
   const metaPrompt=`台灣股市分析師，今日：${ctx}，日期:${date}。
-只輸出JSON物件，不要其他文字：
-{"summary":"今日市場2句評估","key_note":"明日操盤1句重點","watchlist":["2603 長榮","2881 富邦金"]}`;
+重要：只輸出純JSON，不含任何markdown符號。
+格式：{"summary":"今日市場評估2句","key_note":"明日操盤重點1句","watchlist":["2603 長榮","2881 富邦金"]}`;
 
   try{
     const [rawStocks,rawMeta]=await Promise.all([callAI(stockPrompt,2000),callAI(metaPrompt,500)]);
@@ -336,43 +340,80 @@ function renderResult(p,date,price,market){
   const stocks=p.stocks||[];
   window._st=stocks;
   const maxS=Math.max(...stocks.map(s=>s.score||0),1);
+
   const rows=stocks.map((s,i)=>{
     const sc=s.score||0;
-    const ring=sc>=70?'sr sr-h':sc>=50?'sr sr-m':'sr sr-l';
+    const scoreColor=sc>=70?'var(--ac)':sc>=50?'var(--wn)':'var(--dg)';
     const mc=(s.momentum||'').includes('強勢')||(s.momentum||'').includes('上攻')?'bu':(s.momentum||'').includes('回調')?'bd':'bn';
     const tags=(s.reasons||[]).map(r=>`<span class="rtag">${r}</span>`).join('');
-    return `<tr>
-      <td style="width:28px;font-size:10px;color:${i<3?'var(--ac)':'var(--tx3)'};font-weight:700">${String(i+1).padStart(2,'0')}</td>
-      <td style="width:90px"><div class="code">${s.code}</div><div style="font-size:10px;color:var(--tx2)">${s.name}</div></td>
-      <td style="width:65px;font-size:10px;color:var(--tx3)">${s.sector}</td>
-      <td style="width:55px;font-family:var(--mn);font-size:11px;color:var(--wn)">≈${s.est_price}</td>
-      <td style="width:75px"><span class="badge ${mc}">${s.momentum}</span></td>
-      <td style="width:36px"><div class="${ring}">${sc}</div></td>
-      <td>${tags}</td>
-      <td style="width:58px"><button class="btn btn-b" style="padding:4px 10px;font-size:9px;" onclick="deep(${i})">分析↗</button></td>
+    const rowBg=i%2===0?'':'background:rgba(255,255,255,0.02)';
+    return `<tr style="${rowBg}">
+      <td style="text-align:center;font-family:var(--mn);font-size:11px;color:${i<3?'var(--ac)':'var(--tx3)'};">${String(i+1).padStart(2,'0')}</td>
+      <td>
+        <div style="font-family:var(--mn);font-weight:700;font-size:13px;color:var(--tx)">${s.code}</div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:2px">${s.name}</div>
+      </td>
+      <td><span style="font-size:11px;color:var(--tx3)">${s.sector}</span></td>
+      <td style="text-align:right">
+        <div style="font-family:var(--mn);font-size:14px;font-weight:700;color:var(--tx)">${s.current_price ?? '—'}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">近期價</div>
+      </td>
+      <td style="text-align:right">
+        <div style="font-family:var(--mn);font-size:14px;font-weight:700;color:var(--wn)">$${s.est_price}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">估算</div>
+      </td>
+      <td style="text-align:center"><span class="badge ${mc}">${s.momentum}</span></td>
+      <td style="text-align:center">
+        <div style="font-family:var(--mn);font-size:18px;font-weight:700;color:${scoreColor}">${sc}</div>
+        <div style="font-size:9px;color:var(--tx3)">/ 100</div>
+      </td>
+      <td style="max-width:200px"><div style="display:flex;flex-wrap:wrap;">${tags}</div></td>
+      <td style="max-width:220px;font-size:11px;color:var(--tx2);line-height:1.6">${s.strategy||'—'}</td>
+      <td style="font-size:11px;color:var(--dg)">${s.risk||'—'}</td>
+      <td style="text-align:center"><button class="btn btn-b" style="padding:5px 12px;font-size:10px;white-space:nowrap;" onclick="deep(${i})">深度分析 ↗</button></td>
     </tr>`;
   }).join('');
+
   const watches=(p.watchlist||[]).map(w=>`<span class="badge bn" style="margin:2px">${w}</span>`).join('');
+
   document.getElementById('r-out').innerHTML=`
     <div class="g4">
-      <div class="metric"><div class="ml">日期</div><div class="mv sm">${date}</div></div>
-      <div class="metric"><div class="ml">推薦</div><div class="mv ac">${stocks.length} 檔</div></div>
-      <div class="metric"><div class="ml">大盤</div><div class="mv sm">${market}</div></div>
-      <div class="metric"><div class="ml">最高分</div><div class="mv ac">${maxS}</div></div>
+      <div class="metric"><div class="ml">分析日期</div><div class="mv sm">${date}</div></div>
+      <div class="metric"><div class="ml">推薦檔數</div><div class="mv ac">${stocks.length} 檔</div></div>
+      <div class="metric"><div class="ml">大盤走勢</div><div class="mv sm">${market}</div></div>
+      <div class="metric"><div class="ml">最高評分</div><div class="mv ac">${maxS}</div></div>
     </div>
-    ${p.summary?`<div class="card"><div class="ct">市場環境評估</div><p style="font-size:12px;color:var(--tx2);line-height:2">${p.summary}</p></div>`:''}
-    <div class="card">
-      <div class="ct">AI 選股排名（低於 ${price} 元）</div>
+
+    ${p.summary?`<div class="card"><div class="ct">市場環境評估</div><p style="font-size:13px;color:var(--tx2);line-height:2">${p.summary}</p></div>`:''}
+
+    <div class="card" style="padding:18px 0;">
+      <div class="ct" style="padding:0 22px">AI 選股排名（低於 ${price} 元）</div>
       <div style="overflow-x:auto">
-        <table class="tbl">
-          <thead><tr><th>序</th><th>股票</th><th>板塊</th><th>估價</th><th>動能</th><th>分</th><th>選股理由</th><th></th></tr></thead>
+        <table style="width:100%;border-collapse:collapse;min-width:900px;">
+          <thead>
+            <tr style="background:var(--sf2);border-bottom:2px solid var(--b2);">
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);text-align:center;width:36px;">序</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);width:100px;">股票</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);width:70px;">板塊</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);text-align:right;width:70px;">現價</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);text-align:right;width:70px;">估價</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);text-align:center;width:80px;">動能</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);text-align:center;width:50px;">評分</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);">選股理由</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);">操作策略</th>
+              <th style="padding:10px 12px;font-family:var(--mn);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);">主要風險</th>
+              <th style="padding:10px 12px;width:90px;"></th>
+            </tr>
+          </thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p style="font-size:10px;color:var(--tx3);font-family:var(--mn);margin-top:8px">※ 估價為 AI 推算，操作前請以券商報價為準</p>
+      <p style="font-size:10px;color:var(--tx3);font-family:var(--mn);padding:10px 22px 0">※ 估價為 AI 推算，操作前請以券商實際報價為準</p>
     </div>
+
     ${watches?`<div class="card"><div class="ct">觀察名單</div><div style="display:flex;flex-wrap:wrap;gap:5px">${watches}</div></div>`:''}
-    ${p.key_note?`<div class="card"><div class="ct">明日操盤重點</div><p style="font-size:12px;color:var(--tx2);line-height:2">${p.key_note}</p></div>`:''}
+    ${p.key_note?`<div class="card"><div class="ct">明日操盤重點</div><p style="font-size:13px;color:var(--tx2);line-height:2">${p.key_note}</p></div>`:''}
+
     <div id="deep-panel"></div>
     <div class="btn-row">
       <button class="btn" onclick="sw('setup')">重新設定</button>
@@ -384,48 +425,173 @@ function renderResult(p,date,price,market){
 async function deep(idx){
   const s=window._st[idx];
   const panel=document.getElementById('deep-panel');
-  panel.innerHTML=`<div class="card"><div class="ct">AI 深度分析 · ${s.code} ${s.name}</div><div class="ld-wrap"><div class="spinner"></div><div class="ld-txt">分析 ${s.code} 中...</div></div></div>`;
+  const tvSymbol=`TWSE:${s.code}`;
+
+  panel.innerHTML=`<div class="card">
+    <div class="ct">技術分析 · ${s.code} ${s.name}</div>
+
+    <!-- TradingView Chart -->
+    <div id="tv-${s.code}" style="height:520px;border-radius:8px;overflow:hidden;margin-bottom:16px;background:#161b28;"></div>
+
+    <!-- Key levels from AI -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px" id="levels-${s.code}">
+      <div style="background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.2);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:var(--ac);font-family:var(--mn);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">進場區間</div>
+        <div style="font-family:var(--mn);font-size:16px;font-weight:700;color:var(--ac)" id="entry-${s.code}">計算中...</div>
+      </div>
+      <div style="background:rgba(0,144,255,.08);border:1px solid rgba(0,144,255,.2);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:var(--ac2);font-family:var(--mn);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">目標價位</div>
+        <div style="font-family:var(--mn);font-size:16px;font-weight:700;color:var(--ac2)" id="target-${s.code}">計算中...</div>
+      </div>
+      <div style="background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.2);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:var(--dg);font-family:var(--mn);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">停損位</div>
+        <div style="font-family:var(--mn);font-size:16px;font-weight:700;color:var(--dg)" id="stop-${s.code}">計算中...</div>
+      </div>
+      <div style="background:rgba(255,184,77,.08);border:1px solid rgba(255,184,77,.2);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:var(--wn);font-family:var(--mn);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">預期報酬</div>
+        <div style="font-family:var(--mn);font-size:16px;font-weight:700;color:var(--wn)" id="reward-${s.code}">計算中...</div>
+      </div>
+    </div>
+
+    <!-- AI Analysis loading -->
+    <div id="ai-loading-${s.code}">
+      <div class="ld-wrap" style="padding:28px 0">
+        <div class="spinner"></div>
+        <div class="ld-txt">AI 分析師正在研判技術形態...</div>
+      </div>
+    </div>
+    <div id="ai-report-${s.code}"></div>
+  </div>`;
+
   panel.scrollIntoView({behavior:'smooth',block:'start'});
 
-  const prompt=`台灣股市分析師，請對以下個股進行深度操作分析：
-${s.code} ${s.name}（${s.sector}），估計價格約${s.est_price}元，動能：${s.momentum}，評分：${s.score}/100
-選股理由：${(s.reasons||[]).join('、')}
+  // Load TradingView widget
+  const script=document.createElement('script');
+  script.src='https://s3.tradingview.com/tv.js';
+  script.onload=()=>{
+    new TradingView.widget({
+      container_id:`tv-${s.code}`,
+      symbol: tvSymbol,
+      interval:'D',
+      timezone:'Asia/Taipei',
+      theme:'dark',
+      style:'1',
+      locale:'zh_TW',
+      toolbar_bg:'#161b28',
+      enable_publishing:false,
+      allow_symbol_change:false,
+      hide_side_toolbar:false,
+      withdateranges:true,
+      hide_legend:false,
+      studies:[
+        'MASimple@tv-basicstudies',
+        'MASimple@tv-basicstudies',
+        'MASimple@tv-basicstudies',
+        'MACD@tv-basicstudies',
+        'RSI@tv-basicstudies',
+        'BB@tv-basicstudies',
+        'Volume@tv-basicstudies',
+      ],
+      studies_overrides:{
+        'moving average.length':5,
+        'moving average.plot.color':'#00e5a0',
+        'moving average.1.length':20,
+        'moving average.1.plot.color':'#ffb84d',
+        'moving average.2.length':60,
+        'moving average.2.plot.color':'#0090ff',
+      },
+      overrides:{
+        'mainSeriesProperties.candleStyle.upColor':'#00e5a0',
+        'mainSeriesProperties.candleStyle.downColor':'#ff4d6d',
+        'mainSeriesProperties.candleStyle.borderUpColor':'#00e5a0',
+        'mainSeriesProperties.candleStyle.borderDownColor':'#ff4d6d',
+        'mainSeriesProperties.candleStyle.wickUpColor':'#00e5a0',
+        'mainSeriesProperties.candleStyle.wickDownColor':'#ff4d6d',
+        'paneProperties.background':'#161b28',
+        'paneProperties.backgroundType':'solid',
+        'paneProperties.vertGridProperties.color':'rgba(255,255,255,0.04)',
+        'paneProperties.horzGridProperties.color':'rgba(255,255,255,0.04)',
+        'scalesProperties.textColor':'#7a8399',
+      },
+      width:'100%',
+      height:520,
+      autosize:false,
+    });
+  };
+  if(!document.querySelector('script[src*="tradingview"]')) document.head.appendChild(script);
+  else if(window.TradingView) script.onload();
 
-請提供：
-1. 📊 個股評估（技術+基本面，2-3句）
-2. ⚡ 操作策略（多方/觀望/空方）
-3. 🎯 關鍵價位（進場區間、目標價、停損，具體數字）
-4. ⚠️ 主要風險（1-2點）
-5. 📅 短期展望（3-5交易日）
-繁體中文，專業直接。`;
+  // AI deep analysis
+  const market=document.getElementById('i-market').value;
+  const note=document.getElementById('i-note').value;
+  const prompt=`你是台灣股市專業分析師，請對以下個股做完整技術面與基本面分析：
+
+【個股資料】
+- 股票：${s.code} ${s.name}（${s.sector}）
+- 近期價格：約 ${s.current_price||s.est_price} 元
+- 動能評估：${s.momentum}
+- 綜合評分：${s.score}/100
+- 選股理由：${(s.reasons||[]).join('、')}
+- 市場背景：${market}
+- 特殊事件：${note||'無'}
+
+請提供以下完整分析（繁體中文，專業直接）：
+
+【技術面分析】
+- 目前K線型態與位階判斷
+- 均線多空排列狀況（5日、20日、60日）
+- 成交量是否配合（量價關係）
+- 關鍵支撐與壓力價位
+- RSI/MACD目前訊號判讀
+
+【基本面評估】
+- 公司近期營運狀況摘要
+- 產業趨勢與競爭優勢
+- 近期法人動向（外資/投信/自營）
+
+【操作建議】
+- 操作方向：多方/觀望/空方
+- 進場策略：建議進場區間（給具體數字範圍）
+- 目標價位：短線目標、中線目標（給具體數字）
+- 停損設定：建議停損價位（給具體數字）
+- 預期持有天數與報酬率
+
+【風險評估】
+- 主要下行風險（2-3點）
+- 需要注意的關鍵事件
+
+【總結】
+- 一句話總結操作建議`;
 
   try{
-    const text=await callAI(prompt,1000);
-    const fmt=text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ac)">$1</strong>');
-    panel.innerHTML=`<div class="card">
-      <div class="ct">AI 深度分析 · ${s.code} ${s.name}</div>
-      <div class="g2" style="margin-bottom:14px">
-        <div>
-          <div style="font-family:var(--mn);font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">選股理由</div>
-          <div>${(s.reasons||[]).map(r=>`<span class="rtag">${r}</span>`).join('')}</div>
-          <div style="margin-top:12px">
-            <div style="font-family:var(--mn);font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px">策略摘要</div>
-            <p style="font-size:12px;color:var(--tx2);line-height:1.8">${s.strategy||''}</p>
-          </div>
-        </div>
-        <div>
-          <div style="font-family:var(--mn);font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">綜合評分</div>
-          <div style="font-family:var(--mn);font-size:40px;font-weight:700;color:${(s.score||0)>=70?'var(--ac)':(s.score||0)>=50?'var(--wn)':'var(--dg)'}">
-            ${s.score}<span style="font-size:14px;color:var(--tx3)">/100</span></div>
-          <div style="margin-top:10px"><span class="badge ${(s.momentum||'').includes('強勢')||(s.momentum||'').includes('上攻')?'bu':'bn'}">${s.momentum}</span></div>
-        </div>
-      </div>
-      <div style="font-family:var(--mn);font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">AI 深度報告</div>
-      <div class="ai-out">${fmt}</div>
-      <div class="warn-box" style="font-size:10px">⚠ 以上分析僅供參考，不構成投資建議。</div>
-    </div>`;
+    const text=await callAI(prompt,1500);
+    const fmt=text
+      .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ac)">$1</strong>')
+      .replace(/【(.*?)】/g,'<div style="font-family:var(--mn);font-size:10px;color:var(--ac);letter-spacing:.1em;text-transform:uppercase;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--b)">$1</div>')
+      .replace(/^- (.+)$/gm,'<div style="display:flex;gap:8px;margin:4px 0"><span style="color:var(--ac);flex-shrink:0">›</span><span>$1</span></div>');
+
+    // Extract key price levels from strategy field
+    const ep=s.strategy?.match(/進場[^\d]*(\d+[\d.-]*)/)?.[1]||'—';
+    const tp=s.strategy?.match(/目標[^\d]*(\d+[\d.-]*)/)?.[1]||'—';
+    const sl=s.strategy?.match(/停損[^\d]*(\d+[\d.-]*)/)?.[1]||'—';
+    const cp=parseFloat(s.current_price||s.est_price)||0;
+    const tpn=parseFloat(tp)||0;
+    const slp=parseFloat(sl)||0;
+    const reward=cp>0&&tpn>0&&slp>0?'+'+Math.round((tpn-cp)/cp*100)+'%':'—';
+
+    document.getElementById(`entry-${s.code}`).textContent=ep==='—'?'—':ep+' 元';
+    document.getElementById(`target-${s.code}`).textContent=tp==='—'?'—':tp+' 元';
+    document.getElementById(`stop-${s.code}`).textContent=sl==='—'?'—':sl+' 元';
+    document.getElementById(`reward-${s.code}`).textContent=reward;
+
+    document.getElementById(`ai-loading-${s.code}`).style.display='none';
+    document.getElementById(`ai-report-${s.code}`).innerHTML=`
+      <div style="font-family:var(--mn);font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">AI 深度分析報告</div>
+      <div class="ai-out" style="line-height:1.9">${fmt}</div>
+      <div class="warn-box" style="font-size:10px;margin-top:12px">⚠ 以上分析僅供參考，不構成投資建議。技術分析圖表由 TradingView 提供真實市場數據。</div>`;
   }catch(err){
-    panel.innerHTML=`<div class="card"><div class="err-box">✗ ${err.message}</div></div>`;
+    document.getElementById(`ai-loading-${s.code}`).style.display='none';
+    document.getElementById(`ai-report-${s.code}`).innerHTML=`<div class="err-box">✗ ${err.message}</div>`;
   }
 }
 
@@ -462,4 +628,3 @@ function renderHist(){
 </script>
 </body>
 </html>
-
