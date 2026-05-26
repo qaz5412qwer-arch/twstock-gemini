@@ -1,4 +1,5 @@
-res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -8,8 +9,9 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   const { prompt, maxTokens } = req.body || {};
   if (!prompt) return res.status(400).json({ error: '缺少 prompt' });
 
+  // 調整順序：將最新、最省 Token 且不易爆配額的 3.5-flash 放最前面
+  // 移除相容性低的 lite 避免浪費 Vercel 珍貴的 10 秒時間
   const models = [
-    'gemini-2.0-flash-lite',
     'gemini-3.5-flash',
     'gemini-2.5-flash',
   ];
@@ -23,10 +25,12 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          // 在 Prompt 後方加上結構化提示，雙重保險
+          contents: [{ parts: [{ text: prompt + "\n\n請務必、嚴格以 JSON 格式回傳，不要包含任何 Markdown 語法或客套話。" }] }],
           generationConfig: {
             maxOutputTokens: maxTokens || 3000,
-            temperature: 0.3,
+            temperature: 0.2, // 降低溫度讓 AI 輸出結構更嚴謹、不胡言亂語
+            responseMimeType: "application/json" // ⭐ 核心優化：直接要求 Gemini 輸出純 JSON 格式
           },
         }),
       });
@@ -53,15 +57,10 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
       if (!text) { lastError = '回傳空白'; continue; }
 
-      // Aggressively clean non-JSON content
-      text = text
-        .replace(/```json\s*/gi, '')
-        .replace(/```\s*/g, '')
-        .replace(/^\s*\*\s+/gm, '')
-        .replace(/\*\*/g, '')
-        .trim();
+      // 基礎清理：只移除可能意外夾帶的 Markdown 標記，不破壞內部換行
+      text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
-      // Extract only the JSON array or object, discard everything else
+      // 安全截取：精準保留 JSON 陣列或物件的主體內容，拋棄前後可能夾帶的雜質
       const arrStart = text.indexOf('[');
       const arrEnd = text.lastIndexOf(']');
       const objStart = text.indexOf('{');
@@ -73,19 +72,16 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         text = text.slice(objStart, objEnd + 1);
       }
 
-      // Remove any lines that are not part of JSON (rating/comment lines like "(4) - OK")
-      // Keep only lines that look like JSON
-      const lines = text.split('\n');
-      const jsonLines = lines.filter(line => {
-        const t = line.trim();
-        if (!t) return true; // keep empty lines
-        // Skip lines that look like ratings/comments (e.g. "(4) - OK", "- 理由")
-        if (/^\s*\([\d]+\)\s*-/.test(t)) return false;
-        if (/^[^\[{\]}"',:\d\-]/.test(t) && !t.startsWith('"')) return false;
-        return true;
-      });
-      text = jsonLines.join('\n');
+      // ⭐ 驗證機制：先在後端嘗試解析，確保格式百分之百健全
+      try {
+        JSON.parse(text); 
+      } catch (e) {
+        // 如果 JSON 在半路斷掉（例如超時），則紀錄錯誤並跳過換下一個模型試試看
+        lastError = `JSON 格式不完整 (解析失敗): ${e.message}`;
+        continue;
+      }
 
+      // 完全沒問題，回傳給前端 Streamlit
       return res.status(200).json({ text, model });
 
     } catch (err) {
@@ -94,8 +90,8 @@ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     }
   }
 
+  // 走到這裡代表所有模型都失敗了
   return res.status(429).json({
-    error: `所有模型額度已用完，請至 https://aistudio.google.com 確認帳號或升級方案。\n\n${lastError}`
+    error: `所有模型額度已用完，或因 Vercel 免費版 10 秒超時限制。請重新整理或至 Google AI Studio 檢查金鑰狀態。\n\n最後錯誤訊息：${lastError}`
   });
-};
-
+}
