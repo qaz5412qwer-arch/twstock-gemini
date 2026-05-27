@@ -11,13 +11,12 @@ export default async function handler(req, res) {
 
   const input = req.body || {};
   
-  // 💡 1. 動態捕捉前端的「價格上限」
+  // 💡 1. 動態捕捉前端傳入的「價格上限」
   const limitPrice = input.price_limit || input.max_price || input.priceLimit || input.price || 100;
 
-  // 💡 2. 徹底修正：動態捕捉前端的「選股數量」變數，不再鎖死 3 檔！（預設值給 3 作為保底）
+  // 💡 2. 徹底解封：動態捕捉前端的「選股數量」，網頁調幾隻就是幾隻，絕不鎖死
   const stockCount = input.stock_count || input.count || input.num_stocks || input.quantity || input.limit || input.stockCount || input.counts || 3;
 
-  // 提示詞：完全交由變數控制數量
   const prompt = `
 請根據以下條件，推薦精準 ${stockCount} 檔符合條件的台股個股，並給出具體投資策略：
 1. 大盤走勢：${input.market_status || '未指定'}
@@ -25,7 +24,7 @@ export default async function handler(req, res) {
 3. 選股風格：${input.style || '動能突破型（短線）'}
 4. 風險承受度：${input.risk || '穩健'}
 5. 特殊事件/盤前資訊：${input.notes || '無'}
-6. ⚠️【核心價格限制】：所選個股的「目前價格」絕對必須低於 ${limitPrice} 元！
+6. ⚠️【核心價格限制】：所選個股的「目前價格」絕對必須低於 ${limitPrice} 元！請優先挑選市場上本來就低於此價格的股票。
 7. ⚠️【核心數量限制】：必須精準推薦 ${stockCount} 檔個股，不能多也不能少！
 
 請嚴格依照下方的 JSON 陣列格式回傳資料，不要包含任何 Markdown 標記、註解或客套話：
@@ -65,7 +64,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 3500, // 放大 Token 容許量，確保自訂高數量選股時不會斷頭
+            maxOutputTokens: 3500, // 放寬 token，確保高數量選股也能完整寫完
             temperature: 0.1,
             responseMimeType: "application/json"
           },
@@ -111,25 +110,33 @@ export default async function handler(req, res) {
           }
         }
 
-        // 後端 JavaScript 暴力複製所有可能的欄位變體，保證解鎖估價、代號等所有前端表格
+        // 🛑 終極無敵防禦線：把所有可能的估價、代號、現價欄位（中英文、大小寫、拼錯）在後端用程式全部填滿！
         const completelyFilledArray = parsedArray.map(item => {
-          const p = item.price || item.currentPrice || item.current_price || "0";
-          const t = item.targetPrice || item.target_price || item.valuation || item.target || "0";
-          const idVal = item.id || item.code || item.stockId || "0000";
+          const p = item.price || item.currentPrice || item.current_price || item.stockPrice || item.stock_price || "0";
+          const t = item.targetPrice || item.target_price || item.valuation || item.target || item.estimatePrice || item.estimate_price || "0";
+          const idVal = item.id || item.code || item.stockId || item.stockCode || "0000";
           const nameVal = item.name || item.stockName || "未知";
           const marketVal = item.market || item.industry || item.sector || "其他";
 
           return {
             ...item,
-            id: idVal, code: idVal, stockId: idVal, stock_id: idVal, stockCode: idVal, stock_code: idVal, symbol: idVal,
-            name: nameVal, stockName: nameVal, stock_name: nameVal,
-            market: marketVal, sector: marketVal, category: marketVal, industry: marketVal,
-            price: p, currentPrice: p, current_price: p, stockPrice: p, stock_price: p,
+            // 股票代號全變體
+            id: idVal, code: idVal, stockId: idVal, stock_id: idVal, stockCode: idVal, stock_code: idVal, symbol: idVal, "股票代號": idVal, "代號": idVal,
+            // 股票名稱全變體
+            name: nameVal, stockName: nameVal, stock_name: nameVal, "股票名稱": nameVal, "名稱": nameVal,
+            // 板塊全變體
+            market: marketVal, sector: marketVal, category: marketVal, industry: marketVal, "板塊": marketVal, "產業": marketVal, "類股": marketVal,
+            // 現價全變體
+            price: p, currentPrice: p, current_price: p, stockPrice: p, stock_price: p, "現價": p, "目前價格": p,
+            // 💡 估價終極地毯式轟炸（中英雙殺、防禦所有前端變數名）
             valuation: t, targetPrice: t, target_price: t, estimatePrice: t, estimate_price: t,
             estimatedPrice: t, estimated_price: t, target: t, estimate: t, fairValue: t, fair_value: t,
             predictedPrice: t, predicted_price: t, expectedPrice: t, expected_price: t, aiPrice: t, ai_price: t,
             priceTarget: t, price_target: t, intrinsicValue: t, intrinsic_value: t, suggestedPrice: t, suggested_price: t,
-            predict: t, prediction: t, predictPrice: t, predict_price: t, futurePrice: t, future_price: t
+            predict: t, prediction: t, predictPrice: t, predict_price: t, futurePrice: t, future_price: t,
+            value: t, estimated: t, valuation_price: t, valuationPrice: t, targetVal: t, target_val: t,
+            valution: t, valuaton: t, // 預防拼錯
+            "估價": t, "估算": t, "估算價": t, "預估價": t, "預估價格": t, "目標價": t, "目標價格": t, "合理價": t, "建議價": t, "AI估價": t
           };
         });
 
